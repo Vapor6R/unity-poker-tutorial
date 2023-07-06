@@ -1,5 +1,8 @@
-using System.Collections.Generic;
+using UnityEngine.UI;
 using UnityEngine;
+using System.Collections.Generic;
+using System.Collections;
+using System;
 using System.Linq;
 public class Player : MonoBehaviour
 {
@@ -8,21 +11,39 @@ public Player player;
 public string playerName;
     public List<Card> hand = new List<Card>();
 public Transform handPosition; // The position where the player's hand will be placed
-public List<Card> allCards = new List<Card>();
-    private float cardSpacing = 01.5f;
+public List<Card> allhands = new List<Card>();
+    private float cardSpacing = 170f;
 	public List<Card> communityCards = new List<Card>();
 	public List<Card> holeCards = new List<Card>();
+  public Text handRankText;
+
     public void AddCardToHand(Card card)
     {
         hand.Add(card);
+		allhands.Add(card);
 		           UpdateHandPosition();
     }
-    private void Start()
+    public void Awake()
+	{
+	}
+	
+	public void Update()
     {
+		
+		
+	
+	Debug.Log("Contents of allCards:");
 
-        HandStrength handStrength = EvaluateHand(hand);
+foreach (Card card in allhands)
+{
+    Debug.Log(card.GetRank() + " of " + card.GetSuit());
+}
+		         HandStrength handStrength = EvaluateHand(allhands);
         Debug.Log("Player Hand Rank: " + handStrength);
+handRankText.text = handStrength.ToString();
+
     }
+	
     public void ClearHand()
     {
         hand.Clear();
@@ -31,6 +52,10 @@ public List<Card> allCards = new List<Card>();
 	    public void AddCommunityCards(List<Card> communityCards)
     {
         hand.AddRange(communityCards);
+    }
+	public void AddCOMTOALL(List<Card> communityCards)
+    {
+        hand.AddRange(allhands);
     }
 	 private void UpdateHandPosition()
     {
@@ -53,7 +78,14 @@ public List<Card> allCards = new List<Card>();
     public void AddCommunityCard(Card card)
     {
         communityCards.Add(card);
+		
     }
+	 public void AddCOMTOALL(Card card)
+    {
+        
+		allhands.Add(card);
+    }
+
 
     public void ClearHoleCards()
     {
@@ -65,46 +97,44 @@ public List<Card> allCards = new List<Card>();
         communityCards.Clear();
     }
 
-    private HandStrength EvaluateHand(List<Card> hand)
-    {
-            List<Card> allCards = new List<Card>();
-    allCards.AddRange(hand);
-    allCards.AddRange(communityCards);// Sort the hand in descending order of ranks
-        hand.Sort((a, b) => b.GetRank().CompareTo(a.GetRank()));
 
-        if (IsRoyalFlush(allCards))
+ private HandStrength EvaluateHand(List<Card> allhands)
+    {
+            
+        allhands.Sort((a, b) => b.GetRank().CompareTo(a.GetRank()));
+if (IsRoyalFlush(allhands))
         {
             return HandStrength.RoyalFlush;
         }
-        else if (IsStraightFlush(allCards))
+        else if (IsStraightFlush(allhands))
         {
             return HandStrength.StraightFlush;
         }
-        else if (IsFourOfAKind(allCards))
+        else if (IsFourOfAKind(allhands))
         {
             return HandStrength.FourOfAKind;
         }
-        else if (IsFullHouse(allCards))
+        else if (IsFullHouse(allhands))
         {
             return HandStrength.FullHouse;
         }
-        else if (IsFlush(allCards))
+        else if (IsFlush(allhands))
         {
             return HandStrength.Flush;
         }
-        else if (IsStraight(allCards))
+        else if (IsStraight(allhands))
         {
             return HandStrength.Straight;
         }
-        else if (IsThreeOfAKind(allCards))
+        else if (IsThreeOfAKind(allhands))
         {
             return HandStrength.ThreeOfAKind;
         }
-        else if (IsTwoPair(allCards))
+        else if (IsTwoPair(allhands))
         {
             return HandStrength.TwoPair;
         }
-        else if (IsOnePair(allCards))
+        else if (IsOnePair(allhands))
         {
             return HandStrength.OnePair;
         }
@@ -114,23 +144,23 @@ public List<Card> allCards = new List<Card>();
         }
     }
 
-    private bool IsRoyalFlush(List<Card> hand)
+    private bool IsRoyalFlush(List<Card> allhands)
     {
-        return IsStraightFlush(hand) && hand.Any(card => card.GetRank() == 12);
+        return IsStraightFlush(allhands) && allhands.Any(card => card.GetRank() == 12);
     }
 
-    private bool IsStraightFlush(List<Card> hand)
+    private bool IsStraightFlush(List<Card> allhands)
     {
-        return IsFlush(hand) && IsStraight(hand);
+        return IsFlush(allhands) && IsStraight(allhands);
     }
 
-    private bool IsFourOfAKind(List<Card> hand)
+    private bool IsFourOfAKind(List<Card> allhands)
     {
-        for (int i = 0; i <= hand.Count - 4; i++)
+        for (int i = 0; i <= allhands.Count - 4; i++)
         {
-            if (hand[i].GetRank() == hand[i + 1].GetRank() &&
-                hand[i].GetRank() == hand[i + 2].GetRank() &&
-                hand[i].GetRank() == hand[i + 3].GetRank())
+            if (allhands[i].GetRank() == allhands[i + 1].GetRank() &&
+                allhands[i].GetRank() == allhands[i + 2].GetRank() &&
+                allhands[i].GetRank() == allhands[i + 3].GetRank())
             {
                 return true;
             }
@@ -138,21 +168,34 @@ public List<Card> allCards = new List<Card>();
         return false;
     }
 
-    private bool IsFullHouse(List<Card> hand)
+    private bool IsFullHouse(List<Card> allhands)
     {
-        return IsThreeOfAKind(hand) && IsOnePair(hand);
+        return IsThreeOfAKind(allhands) && IsOnePair(allhands);
     }
 
-    private bool IsFlush(List<Card> hand)
+    private bool IsFlush(List<Card> allhands)
     {
-        return hand.All(card => card.GetSuit() == hand[0].GetSuit());
+        return allhands.All(card => card.GetSuit() == allhands[0].GetSuit());
     }
 
-    private bool IsStraight(List<Card> hand)
+    private bool IsStraight(List<Card> allhands)
     {
-        for (int i = 0; i < hand.Count - 1; i++)
+        for (int i = 0; i < allhands.Count - 1; i++)
         {
-            if (hand[i].GetRank() == hand[i + 1].GetRank() + 1)
+            if (allhands[i].GetRank() != allhands[i + 1].GetRank() + 1)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private bool IsThreeOfAKind(List<Card> allhands)
+    {
+        for (int i = 0; i <= allhands.Count - 3; i++)
+        {
+            if (allhands[i].GetRank() == allhands[i + 1].GetRank() &&
+                allhands[i].GetRank() == allhands[i + 2].GetRank())
             {
                 return true;
             }
@@ -160,25 +203,12 @@ public List<Card> allCards = new List<Card>();
         return false;
     }
 
-    private bool IsThreeOfAKind(List<Card> hand)
-    {
-        for (int i = 0; i <= hand.Count - 3; i++)
-        {
-            if (hand[i].GetRank() == hand[i + 1].GetRank() &&
-                hand[i].GetRank() == hand[i + 2].GetRank())
-            {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private bool IsTwoPair(List<Card> hand)
+    private bool IsTwoPair(List<Card> allhands)
     {
         int pairCount = 0;
-        for (int i = 0; i <= hand.Count - 2; i++)
+        for (int i = 0; i <= allhands.Count - 2; i++)
         {
-            if (hand[i].GetRank() == hand[i + 1].GetRank())
+            if (allhands[i].GetRank() == allhands[i + 1].GetRank())
             {
                 pairCount++;
                 i++;
@@ -187,11 +217,11 @@ public List<Card> allCards = new List<Card>();
         return pairCount == 2;
     }
 
-    private bool IsOnePair(List<Card> hand)
+    private bool IsOnePair(List<Card> allhands)
     {
-        for (int i = 0; i <= hand.Count - 2; i++)
+        for (int i = 0; i <= allhands.Count - 2; i++)
         {
-            if (hand[i].GetRank() == hand[i + 1].GetRank())
+            if (allhands[i].GetRank() == allhands[i + 1].GetRank())
             {
                 return true;
             }
@@ -213,4 +243,3 @@ public enum HandStrength
     StraightFlush,
     RoyalFlush
 }
-
