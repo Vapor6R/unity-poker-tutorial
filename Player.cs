@@ -170,8 +170,41 @@ if (IsRoyalFlush(allhands))
 
     private bool IsFullHouse(List<Card> allhands)
     {
-        return IsThreeOfAKind(allhands) && IsOnePair(allhands);
+            if (IsThreeOfAKind(allhands))
+    {
+        List<Card> remainingCards = RemoveThreeOfAKind(allhands);
+        return IsOnePair(remainingCards);
     }
+    return false;
+}
+
+private List<Card> RemoveThreeOfAKind(List<Card> allhands)
+{
+    Dictionary<int, int> rankCounts = new Dictionary<int, int>();
+
+    // Count the occurrences of each rank
+    foreach (Card card in allhands)
+    {
+        if (!rankCounts.ContainsKey(card.GetRank()))
+        {
+            rankCounts[card.GetRank()] = 0;
+        }
+        rankCounts[card.GetRank()]++;
+    }
+
+    // Remove the three of a kind cards from the list
+    List<Card> remainingCards = new List<Card>();
+    foreach (Card card in allhands)
+    {
+        if (rankCounts[card.GetRank()] != 3)
+        {
+            remainingCards.Add(card);
+        }
+    }
+
+    return remainingCards;
+}
+
 
     private bool IsFlush(List<Card> allhands)
     {
