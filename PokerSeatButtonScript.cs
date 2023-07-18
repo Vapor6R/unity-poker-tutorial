@@ -8,7 +8,7 @@ public class PokerSeatButtonScript : MonoBehaviourPunCallbacks
     [SerializeField] private int seatIndex; // The index of the seat or button
     private bool isSeatOccupied = false; // Flag to track if the seat is occupied
 
-    private void Start()
+    private void Update()
     {
         if (!PhotonNetwork.IsConnected)
         {
