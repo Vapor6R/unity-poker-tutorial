@@ -254,12 +254,12 @@ private List<Card> RemoveThreeOfAKind(List<Card> allhands)
     {
         for (int i = 0; i <= allhands.Count - 2; i++)
         {
-            if (allhands[i].GetRank() == allhands[i + 1].GetRank())
+            if (allhands[i].GetRank() != allhands[i + 1].GetRank())
             {
-                return true;
+                return false;
             }
         }
-        return false;
+        return true;
     }
 }
 
