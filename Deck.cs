@@ -17,18 +17,30 @@ public class Deck : MonoBehaviourPunCallbacks
     public Transform communityCardsParent; // Add this for community cards
     public int cardsToDistributePerPlayer = 2; // Number of cards to distribute per player
 private PlayerCardHandler playerCardHandler;
-
+ public override void OnPlayerEnteredRoom(Player newPlayer)
+    {
+        Debug.Log("New player joined: " + newPlayer.NickName);
+	                if (PhotonNetwork.CurrentRoom.PlayerCount == 2 && !distributed && PhotonNetwork.IsMasterClient)
+        {
+            photonView.RPC("ShuffleDeckRPC", RpcTarget.All);
+            StartCoroutine(DelayedDistributeCards());
+        }
+    }
+    // This function is called when a player leaves the room
+    public override void OnPlayerLeftRoom(Player otherPlayer)
+    {
+        Debug.Log("Player left: " + otherPlayer.NickName);
+        
+        // Optionally, you can handle additional logic here,
+        // such as updating the UI to reflect the player's departure
+    }
     void Start()
     {
         if (PhotonNetwork.IsMasterClient)
         {
             CreateDeck();
         }
-        if (PhotonNetwork.CurrentRoom.PlayerCount == 2 && !distributed && PhotonNetwork.IsMasterClient)
-        {
-            photonView.RPC("ShuffleDeckRPC", RpcTarget.All);
-            StartCoroutine(DelayedDistributeCards());
-        }
+
 playerCardHandler = FindObjectOfType<PlayerCardHandler>();
     }
 	
@@ -169,8 +181,12 @@ playerCardHandler = FindObjectOfType<PlayerCardHandler>();
             {
                 Debug.Log($"Adding community card {card.rank} of {card.suit} to position {positionIndex}");
                 card.transform.SetParent(communityCardsParent, false); // False to keep the local position
-                Vector3 desiredPosition = new Vector3(positionIndex * 2f, 0f, 0f);
-                card.transform.localPosition = desiredPosition;
+                 float spacing = 40.0f; // Adjust the spacing value as needed
+            Vector3 cardPosition = new Vector3(positionIndex * spacing, 0, 0);
+            
+            // Set the local position of the card
+            card.transform.localPosition = cardPosition;
+                
                 Debug.Log($"Community card {card.rank} of {card.suit} added at position {positionIndex}.");
             }
             else
