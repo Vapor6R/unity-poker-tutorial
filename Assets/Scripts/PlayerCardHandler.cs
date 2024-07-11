@@ -92,9 +92,17 @@ private void TransformCardPositions()
     {
         Card card = playerCards[i];
         // Set desired position for each card
-        Vector3 desiredPosition = new Vector3(i * 130f, 0f, 0f);
+        Vector3 desiredPosition = new Vector3(i * 150f, 0f, 0f);
         card.transform.localPosition = desiredPosition;
     }
 }
-
+ public void ClearHand()
+    {
+        // Implement logic to clear player's hand
+        foreach (Card card in playerCards)
+        {
+            PhotonNetwork.Destroy(card.gameObject); // Destroy each card GameObject
+        }
+        playerCards.Clear(); // Clear the list of player cards
+    }
 }
