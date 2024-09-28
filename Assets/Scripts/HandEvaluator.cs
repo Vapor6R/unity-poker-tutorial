@@ -1,43 +1,47 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-	public enum HandRank
-{
-    HighCard,
-    OnePair,
-    TwoPair,
-    ThreeOfAKind,
-    Straight,
-    Flush,
-    FullHouse,
-    FourOfAKind,
-    StraightFlush,
-    RoyalFlush
+using UnityEngine;
+public enum HandRank
+{None,
+    HighCard = 1,
+    OnePair = 2,
+    TwoPair = 3,
+    ThreeOfAKind = 4,
+    Straight = 5,
+    Flush = 6,
+    FullHouse = 7,
+    FourOfAKind = 8,
+    StraightFlush = 9,
+    RoyalFlush = 10
 }
+
 public static class HandEvaluator
 {
-
-    public static HandRank EvaluateBestHand(List<Card> playerCards)
+  public static HandRank EvaluateBestHand(List<Card> playerCards)
+{
+    if (playerCards == null || playerCards.Count != 7)
     {
-        if (playerCards == null || playerCards.Count != 7)
-        {
-            throw new ArgumentException("Exactly 7 cards are required to evaluate the best poker hand.");
-        }
-
-        List<List<Card>> fiveCardCombinations = GetFiveCardCombinations(playerCards);
-        HandRank bestHandRank = HandRank.HighCard;
-
-        foreach (var combination in fiveCardCombinations)
-        {
-            HandRank currentHandRank = EvaluateHand(combination);
-            if (currentHandRank > bestHandRank)
-            {
-                bestHandRank = currentHandRank;
-            }
-        }
-
-        return bestHandRank;
+        throw new ArgumentException("Exactly 7 cards are required to evaluate the best poker hand.");
     }
+
+    List<List<Card>> fiveCardCombinations = GetFiveCardCombinations(playerCards);
+    HandRank bestHandRank = HandRank.HighCard;
+
+    foreach (var combination in fiveCardCombinations)
+    {
+        HandRank currentHandRank = EvaluateHand(combination);
+        Debug.Log($"Evaluated hand: {string.Join(", ", combination.Select(card => card.rank.ToString() + card.suit.ToString()))} - Rank: {currentHandRank}");
+
+        if (currentHandRank > bestHandRank)
+        {
+            bestHandRank = currentHandRank;
+        }
+    }
+
+    Debug.Log($"Best hand rank determined: {bestHandRank}");
+    return bestHandRank;
+}
 
     private static List<List<Card>> GetFiveCardCombinations(List<Card> cards)
     {

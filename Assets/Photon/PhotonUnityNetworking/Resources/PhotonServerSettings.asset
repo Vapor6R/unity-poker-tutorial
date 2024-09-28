@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: PhotonServerSettings
   m_EditorClassIdentifier: 
   AppSettings:
-    AppIdRealtime: 15c70ee3-6022-4ae0-b08b-a8c50eb28d73
+    AppIdRealtime: ab50ff9e-ac6a-47b2-b78b-2aeafbd3f348
     AppIdFusion: 
     AppIdChat: 
     AppIdVoice: 
@@ -28,7 +28,7 @@ MonoBehaviour:
     AuthMode: 0
     EnableLobbyStatistics: 0
     NetworkLogging: 1
-  DevRegion: eu
+  DevRegion: 
   PunLogging: 0
   EnableSupportLogger: 0
   RunInBackground: 1
@@ -42,25 +42,46 @@ MonoBehaviour:
   - AddCardToPlayerHandRPC
   - AddCommunityCardRPC
   - AddCommunityCardsRPC
+  - AmountToCall
+  - AnnounceWinner
   - DealCommunityCardsRPC
   - DealRiverCardRPC
   - DealTurnCardRPC
+  - DeductChipsRPC
   - DistributeAndAddCommunityCards
   - DistributeCardsRPC
+  - EndFlop
+  - EvaluateWinner
+  - firsurn
+  - floptrue
   - HideButtonRPC
   - InitializeCard
-  - ShuffleDeckRPC
-  - RPC_EndTurn
-  - StartTurn
-  - RPC_StartTurn
-  - PlayerCalled
-  - PlayerFolded
-  - PlayerRaised
-  - SetCurrentPlayer
-  - StartTurnRPC
+  - PlayerFinishedTurn
+  - PostBigBlind
+  - PostBlinds
+  - PostSmallBlind
+  - ReceiveHandRank
+  - RequestHandRanks
+  - Reset
+  - ResetPlayerHandRank
+  - ResetTurnStatesForOthers
   - RestartGameRPC
-  - UpdatePotAmountRPC
   - RESTARTRPC
+  - rivertrue
+  - SendHandRanks
+  - SetPlayerHandRankRPC
+  - SetPlayerRaiseTrue
+  - ShuffleDeckRPC
+  - StartSit
+  - StartTurnRPC
+  - TransferPotToWinner
+  - turntrue
+  - UpdateCallAmountText
+  - UpdateChipCountRPC
+  - UpdatePlayerHandRankRPC
+  - UpdatePosition
+  - UpdatePotAmountRPC
+  - UpdateRotation
   DisableAutoOpenWizard: 1
   ShowSettings: 0
-  DevRegionSetOnce: 1
+  DevRegionSetOnce: 0
