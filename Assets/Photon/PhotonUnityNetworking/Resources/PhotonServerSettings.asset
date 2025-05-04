@@ -28,7 +28,7 @@ MonoBehaviour:
     AuthMode: 0
     EnableLobbyStatistics: 0
     NetworkLogging: 1
-  DevRegion: 
+  DevRegion: eu
   PunLogging: 0
   EnableSupportLogger: 0
   RunInBackground: 1
@@ -41,47 +41,58 @@ MonoBehaviour:
   - RespawnSpaceship
   - AddCardToPlayerHandRPC
   - AddCommunityCardRPC
-  - AddCommunityCardsRPC
-  - AmountToCall
-  - AnnounceWinner
+  - AddPlayerToGameRPC
+  - ClearCards
+  - ClearCommunityCards
+  - ClearHand
+  - ClearPlayerHands
   - DealCommunityCardsRPC
   - DealRiverCardRPC
   - DealTurnCardRPC
-  - DeductChipsRPC
   - DistributeAndAddCommunityCards
   - DistributeCardsRPC
-  - EndFlop
-  - EvaluateWinner
-  - firsurn
-  - floptrue
-  - HideButtonRPC
+  - HandleUIForPlayerUTG
+  - HideSeatForAll
+  - InGameF
   - InitializeCard
-  - PlayerFinishedTurn
-  - PostBigBlind
-  - PostBlinds
-  - PostSmallBlind
-  - ReceiveHandRank
-  - RequestHandRanks
-  - Reset
-  - ResetPlayerHandRank
-  - ResetTurnStatesForOthers
+  - InitializeDeck
+  - IsPlaying
+  - New
+  - ProgressF
+  - ProgressTrue
   - RestartGameRPC
-  - RESTARTRPC
-  - rivertrue
-  - SendHandRanks
-  - SetPlayerHandRankRPC
-  - SetPlayerRaiseTrue
+  - RestartRPC
+  - roles
+  - RotatePlayerPositions
+  - SetCurrentSeat
+  - SetPlayerPosition
   - ShuffleDeckRPC
   - StartSit
-  - StartTurnRPC
-  - TransferPotToWinner
+  - Roles
+  - AddPlayerToList
+  - floptrue
+  - PlayerFinishedTurn
+  - ResetAmount
+  - ResetTurnStatesForOthers
+  - rivertrue
   - turntrue
-  - UpdateCallAmountText
-  - UpdateChipCountRPC
-  - UpdatePlayerHandRankRPC
-  - UpdatePosition
-  - UpdatePotAmountRPC
-  - UpdateRotation
+  - PostBlinds
+  - UpdateBlindUI
+  - BlindTrue
+  - BlindF
+  - Reset
+  - AddCommunityCardsRPC
+  - EvaluateHand
+  - ReceiveWinnings
+  - AddToPot
+  - AddToPotRPC
+  - NameX
+  - UpdateChipCountUI
+  - SetPlayerName
+  - CurrentBetSync
+  - ResetBetsAfterFlop
+  - RaiseAmount
+  - UpdateBetTextRPC
   DisableAutoOpenWizard: 1
   ShowSettings: 0
-  DevRegionSetOnce: 0
+  DevRegionSetOnce: 1

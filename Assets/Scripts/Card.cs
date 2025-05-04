@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.UI;
 using Photon.Pun;
 
 public enum Suit
@@ -11,26 +12,27 @@ public enum Suit
 
 public enum Rank
 {
-    Ace = 1,
-    Two,
-    Three,
-    Four,
-    Five,
-    Six,
-    Seven,
-    Eight,
-    Nine,
-    Ten,
-    Jack,
-    Queen,
-    King
+ 
+    Two =2,
+    Three=3,
+    Four=4,
+    Five=5,
+    Six=6,
+    Seven=7,
+    Eight=8,
+    Nine=9,
+    Ten=10,
+    Jack=11,
+    Queen=12,
+    King=13,
+	Ace = 14
 }
 
 public class Card : MonoBehaviourPunCallbacks, IPunObservable
 {
     public Rank rank;
     public Suit suit;
-    private SpriteRenderer spriteRenderer;
+    private Image imageComponent;
 
     // Method to initialize the card with a rank and suit
     public void InitializeCard(Rank rank, Suit suit)
@@ -43,12 +45,12 @@ public class Card : MonoBehaviourPunCallbacks, IPunObservable
 
         if (cardSprite != null)
         {
-            if (spriteRenderer == null)
+            if (imageComponent == null)
             {
-                spriteRenderer = gameObject.AddComponent<SpriteRenderer>();
+                imageComponent = gameObject.AddComponent<Image>();
             }
 
-            spriteRenderer.sprite = cardSprite;
+            imageComponent.sprite = cardSprite;
         }
         else
         {
@@ -58,7 +60,19 @@ public class Card : MonoBehaviourPunCallbacks, IPunObservable
 
     private void Awake()
     {
-        spriteRenderer = GetComponent<SpriteRenderer>();
+        // Ensure the GameObject has a Canvas component
+        if (GetComponent<Canvas>() == null)
+        {
+            gameObject.AddComponent<Canvas>();
+        }
+
+        // Ensure the GameObject has a RectTransform component
+        if (GetComponent<RectTransform>() == null)
+        {
+            gameObject.AddComponent<RectTransform>();
+        }
+
+        imageComponent = GetComponent<Image>();
     }
 
     public void OnPhotonSerializeView(PhotonStream stream, PhotonMessageInfo info)
@@ -68,7 +82,7 @@ public class Card : MonoBehaviourPunCallbacks, IPunObservable
             // If this is the owner of the card (you), send the data
             stream.SendNext(rank);
             stream.SendNext(suit);
-            stream.SendNext(spriteRenderer.sprite != null ? spriteRenderer.sprite.name : "");
+            stream.SendNext(imageComponent.sprite != null ? imageComponent.sprite.name : "");
         }
         else
         {
@@ -82,12 +96,12 @@ public class Card : MonoBehaviourPunCallbacks, IPunObservable
                 Sprite cardSprite = Resources.Load<Sprite>("Cards/" + spriteName);
                 if (cardSprite != null)
                 {
-                    if (spriteRenderer == null)
+                    if (imageComponent == null)
                     {
-                        spriteRenderer = gameObject.AddComponent<SpriteRenderer>();
+                        imageComponent = gameObject.AddComponent<Image>();
                     }
 
-                    spriteRenderer.sprite = cardSprite;
+                    imageComponent.sprite = cardSprite;
                 }
                 else
                 {
@@ -95,12 +109,5 @@ public class Card : MonoBehaviourPunCallbacks, IPunObservable
                 }
             }
         }
-    }
-
-    public void SynchronizeCardInitialization(Rank syncedRank, Suit syncedSuit)
-    {
-        rank = syncedRank;
-        suit = syncedSuit;
-        InitializeCard(rank, suit);
     }
 }
