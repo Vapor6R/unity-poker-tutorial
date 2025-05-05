@@ -2047,6 +2047,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: cd07feac95b4ac548b3992bc69117dc3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  playerPositions: 
+  currentSeat: 0
   bestHandRank: 0
   smallBlindText: {fileID: 5218002624551891799}
   bigBlindText: {fileID: 6635510091216186628}
@@ -2070,7 +2072,6 @@ MonoBehaviour:
   playerHand: []
   currentBetThisRound: 0
   statue: 0
-  currentSeat: 0
 --- !u!1 &6681314075790996375
 GameObject:
   m_ObjectHideFlags: 0

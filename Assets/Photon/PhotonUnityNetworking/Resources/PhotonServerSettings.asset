@@ -93,6 +93,11 @@ MonoBehaviour:
   - ResetBetsAfterFlop
   - RaiseAmount
   - UpdateBetTextRPC
+  - ReEnableSeatButton
+  - HideButtonRPC
+  - BlindFalse
+  - ResetHand
+  - A
   DisableAutoOpenWizard: 1
   ShowSettings: 0
   DevRegionSetOnce: 1

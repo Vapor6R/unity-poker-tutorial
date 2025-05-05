@@ -11,7 +11,12 @@ using UnityEngine.UI;
 public class PlayerManager : MonoBehaviourPunCallbacks, IOnEventCallback
 
 
-{public HandRank bestHandRank;
+{
+	public List<PlayerPosition> playerPositions = new List<PlayerPosition>();
+    private int dealerIndex = 0; // Assume the first player in the list is the dealer at the start
+	
+	public int currentSeat;
+	public HandRank bestHandRank;
 	public TMP_Text smallBlindText;
     public TMP_Text bigBlindText;
 	public TMP_Text nicknameText;
@@ -59,7 +64,7 @@ public enum Statue
     }
 	
 	 public Statue statue;
-     public int currentSeat;
+
 [PunRPC]
     public void SetCurrentSeat(int seat)
     {
@@ -106,7 +111,10 @@ void Awake()
 		
 		
     }}
-	
+	void Start()
+    {
+      
+    }
 [PunRPC]
 public void UpdateBlindUI()
 {
@@ -126,6 +134,12 @@ public void EvaluateHand()
     HandValue handValue = HandEvaluator.EvaluateHand(playerHand);
 bestHandRank = handValue.Rank;
     Debug.Log($"[{PhotonNetwork.NickName}] Hand Rank: {bestHandRank}");
+}
+
+[PunRPC]
+private void ResetHand()
+{
+    bestHandRank = HandRank.HighCard; // Reset to the lowest/default hand rank
 }
 public void DetermineWinner()
 {
@@ -173,7 +187,13 @@ public void DetermineWinner()
     }
     private void OnEnable()
     {
-		
+		ExitGames.Client.Photon.Hashtable customProperties = new ExitGames.Client.Photon.Hashtable();
+        customProperties.Add("joinTime", PhotonNetwork.Time);  // Store the join time when the player joins
+        PhotonNetwork.LocalPlayer.SetCustomProperties(customProperties);
+
+        // You can also log it to verify if it's set correctly
+        Debug.Log($"Player {PhotonNetwork.LocalPlayer.NickName} joined at {PhotonNetwork.Time}");
+    
 		
         if (photonView.IsMine)
         {
@@ -183,7 +203,7 @@ public void DetermineWinner()
             Debug.Log($"{photonView.Owner.NickName} TagObject assigned: {this.gameObject}");
 			PhotonNetwork.AddCallbackTarget(this); 
 			photonView.RPC("IsPlaying", RpcTarget.AllBuffered, (int)Statue.Waiting);
-			
+			 
 			
 			GameManager.Instance.photonView.RPC("StartSit", RpcTarget.MasterClient);
 
@@ -284,7 +304,12 @@ Blind=false;
             }
         }
     }
-	
+[PunRPC]
+private void BlindFalse()
+{
+    Blind = false;
+    Debug.Log($"BlindFalse RPC called for player: {photonView.Owner.NickName}, Blind set to: {Blind}");
+}
 [PunRPC]
 public void PostBlinds()
 {
@@ -293,7 +318,7 @@ if (FirstTurn && playerPosition == PlayerPosition.DEALER && !Blind)
         PostBlind(GameManager.BIG_BLIND_AMOUNT);
 		 smallBlindText.gameObject.SetActive(true);
         bigBlindText.gameObject.SetActive(false);
-		photonView.RPC("BlindTrue", RpcTarget.All);
+		photonView.RPC("BlindTrue", RpcTarget.All);  
         photonView.RPC("UpdateChipCountUI", RpcTarget.AllBuffered, chipCount);
 			 photonView.RPC("RaiseAmount", RpcTarget.All, 0);
     }
@@ -303,7 +328,7 @@ if (FirstTurn && playerPosition == PlayerPosition.DEALER && !Blind)
         PostBlind(GameManager.SMALL_BLIND_AMOUNT);
         smallBlindText.gameObject.SetActive(true);
         bigBlindText.gameObject.SetActive(false);
-		photonView.RPC("BlindTrue", RpcTarget.All);
+photonView.RPC("BlindTrue", RpcTarget.All);  
         photonView.RPC("UpdateChipCountUI", RpcTarget.AllBuffered, chipCount);
         
     }
@@ -447,6 +472,207 @@ dealerLogo.SetActive(false);
             photonView.RPC("SetPlayerPosition", RpcTarget.All, playerPosition);
         }
     }
+[PunRPC]
+public void RotatePlayerPositions()
+{
+    // Create a list of player positions (could be 9 max positions)
+    List<PlayerPosition> positions = new List<PlayerPosition>
+    {
+        PlayerPosition.DEALER, 
+        PlayerPosition.UTG, 
+        PlayerPosition.UTG_PLUS_1, 
+        PlayerPosition.POSITION_3, 
+        PlayerPosition.POSITION_4, 
+        PlayerPosition.POSITION_5, 
+        PlayerPosition.POSITION_6, 
+        PlayerPosition.POSITION_7, 
+        PlayerPosition.POSITION_8, 
+    };
+
+    // Get the current player's position index
+    int currentPositionIndex = positions.IndexOf(playerPosition);
+
+    // Check the number of players in the room
+    int playerCount = PhotonNetwork.CurrentRoom.PlayerCount;
+
+    // Rotate based on player count
+    if (playerCount == 2)
+    {
+        if (currentPositionIndex == 0)  // DEALER position
+        {
+            playerPosition = PlayerPosition.UTG;  // Move to UTG
+        }
+        else if (currentPositionIndex == 1)  // UTG position
+        {
+            playerPosition = PlayerPosition.DEALER;  // Move to DEALER
+        }
+    }
+    else if (playerCount == 3)
+    {
+        // Rotate among the first 3 positions
+        if (currentPositionIndex == 0)  // DEALER position
+        {
+            playerPosition = PlayerPosition.UTG;  // Move to UTG
+        }
+        else if (currentPositionIndex == 1)  // UTG position
+        {
+            playerPosition = PlayerPosition.UTG_PLUS_1;  // Move to UTG+1
+        }
+        else if (currentPositionIndex == 2)  // UTG+1 position
+        {
+            playerPosition = PlayerPosition.DEALER;  // Move to DEALER
+        }
+    }
+    else if (playerCount == 4)
+    {
+        // Rotate among the first 4 positions
+        if (currentPositionIndex == 0)  // DEALER position
+        {
+            playerPosition = PlayerPosition.UTG;  // Move to UTG
+        }
+        else if (currentPositionIndex == 1)  // UTG position
+        {
+            playerPosition = PlayerPosition.UTG_PLUS_1;  // Move to UTG+1
+        }
+        else if (currentPositionIndex == 2)  // UTG+1 position
+        {
+            playerPosition = PlayerPosition.POSITION_3;  // Move to POSITION_3
+        }
+        else if (currentPositionIndex == 3)  // POSITION_3 position
+        {
+            playerPosition = PlayerPosition.DEALER;  // Move to DEALER
+        }
+    }
+    else if (playerCount == 5)
+    {
+        // Rotate among the first 5 positions
+        if (currentPositionIndex == 0)  // DEALER position
+        {
+            playerPosition = PlayerPosition.UTG;  // Move to UTG
+        }
+        else if (currentPositionIndex == 1)  // UTG position
+        {
+            playerPosition = PlayerPosition.UTG_PLUS_1;  // Move to UTG+1
+        }
+        else if (currentPositionIndex == 2)  // UTG+1 position
+        {
+            playerPosition = PlayerPosition.POSITION_3;  // Move to POSITION_3
+        }
+        else if (currentPositionIndex == 3)  // POSITION_3 position
+        {
+            playerPosition = PlayerPosition.POSITION_4;  // Move to POSITION_4
+        }
+        else if (currentPositionIndex == 4)  // POSITION_4 position
+        {
+            playerPosition = PlayerPosition.DEALER;  // Move to DEALER
+        }
+    }
+    else if (playerCount == 6)
+    {
+        // Rotate among the first 6 positions
+        if (currentPositionIndex == 0)  // DEALER position
+        {
+            playerPosition = PlayerPosition.UTG;  // Move to UTG
+        }
+        else if (currentPositionIndex == 1)  // UTG position
+        {
+            playerPosition = PlayerPosition.UTG_PLUS_1;  // Move to UTG+1
+        }
+        else if (currentPositionIndex == 2)  // UTG+1 position
+        {
+            playerPosition = PlayerPosition.POSITION_3;  // Move to POSITION_3
+        }
+        else if (currentPositionIndex == 3)  // POSITION_3 position
+        {
+            playerPosition = PlayerPosition.POSITION_4;  // Move to POSITION_4
+        }
+        else if (currentPositionIndex == 4)  // POSITION_4 position
+        {
+            playerPosition = PlayerPosition.POSITION_5;  // Move to POSITION_5
+        }
+        else if (currentPositionIndex == 5)  // POSITION_5 position
+        {
+            playerPosition = PlayerPosition.DEALER;  // Move to DEALER
+        }
+    }
+    else if (playerCount == 7)
+    {
+        // Rotate among the first 7 positions
+        if (currentPositionIndex == 0)  // DEALER position
+        {
+            playerPosition = PlayerPosition.UTG;  // Move to UTG
+        }
+        else if (currentPositionIndex == 1)  // UTG position
+        {
+            playerPosition = PlayerPosition.UTG_PLUS_1;  // Move to UTG+1
+        }
+        else if (currentPositionIndex == 2)  // UTG+1 position
+        {
+            playerPosition = PlayerPosition.POSITION_3;  // Move to POSITION_3
+        }
+        else if (currentPositionIndex == 3)  // POSITION_3 position
+        {
+            playerPosition = PlayerPosition.POSITION_4;  // Move to POSITION_4
+        }
+        else if (currentPositionIndex == 4)  // POSITION_4 position
+        {
+            playerPosition = PlayerPosition.POSITION_5;  // Move to POSITION_5
+        }
+        else if (currentPositionIndex == 5)  // POSITION_5 position
+        {
+            playerPosition = PlayerPosition.POSITION_6;  // Move to POSITION_6
+        }
+        else if (currentPositionIndex == 6)  // POSITION_6 position
+        {
+            playerPosition = PlayerPosition.DEALER;  // Move to DEALER
+        }
+    }
+    else if (playerCount == 8)
+    {
+        // Rotate among the first 8 positions
+        if (currentPositionIndex == 0)  // DEALER position
+        {
+            playerPosition = PlayerPosition.UTG;  // Move to UTG
+        }
+        else if (currentPositionIndex == 1)  // UTG position
+        {
+            playerPosition = PlayerPosition.UTG_PLUS_1;  // Move to UTG+1
+        }
+        else if (currentPositionIndex == 2)  // UTG+1 position
+        {
+            playerPosition = PlayerPosition.POSITION_3;  // Move to POSITION_3
+        }
+        else if (currentPositionIndex == 3)  // POSITION_3 position
+        {
+            playerPosition = PlayerPosition.POSITION_4;  // Move to POSITION_4
+        }
+        else if (currentPositionIndex == 4)  // POSITION_4 position
+        {
+            playerPosition = PlayerPosition.POSITION_5;  // Move to POSITION_5
+        }
+        else if (currentPositionIndex == 5)  // POSITION_5 position
+        {
+            playerPosition = PlayerPosition.POSITION_6;  // Move to POSITION_6
+        }
+        else if (currentPositionIndex == 6)  // POSITION_6 position
+        {
+            playerPosition = PlayerPosition.POSITION_7;  // Move to POSITION_7
+        }
+        else if (currentPositionIndex == 7)  // POSITION_7 position
+        {
+            playerPosition = PlayerPosition.DEALER;  // Move to DEALER
+        }
+    }
+    else if (playerCount == 9)
+    {
+        // Rotate among all 9 positions
+        int nextPositionIndex = (currentPositionIndex + 1) % positions.Count;
+        playerPosition = positions[nextPositionIndex];  // Update player position
+    } 
+	photonView.RPC("BlindFalse", RpcTarget.All); 
+
+    photonView.RPC("Logos", RpcTarget.All);
+}
 	private IEnumerator delayedRole()
 {yield return new WaitForSeconds(1f); // Adjust the delay time as needed
 	{
@@ -462,6 +688,7 @@ public void SetPlayerPosition(PlayerPosition assignedPosition)
     Debug.Log($"[SetPlayerPosition] TagObject reassigned for {photonView.Owner.NickName}");
 
     HandleUIForPlayerUTG();
+
 }
 [PunRPC]
 public void ReceiveWinnings(long amount)
@@ -661,6 +888,7 @@ public void OnEvent(EventData photonEvent)
                 // Swap UTG to DEALER
                 pm.photonView.RPC("SetPlayerPosition", RpcTarget.All, PlayerPosition.DEALER);
             }
+			
         }
     }
 }
@@ -699,8 +927,10 @@ private void HandleUIForPlayerUTG()
 
 private void OnDisable()
 {
-    PhotonNetwork.RemoveCallbackTarget(this); // Unregister when not needed
+    PhotonNetwork.RemoveCallbackTarget(this);
+ GameManager.Instance.photonView.RPC("Check", RpcTarget.MasterClient);
 }
+
 public long GetChipCount()
     {
         // Return the player's total chip count (assume this is already implemented)
