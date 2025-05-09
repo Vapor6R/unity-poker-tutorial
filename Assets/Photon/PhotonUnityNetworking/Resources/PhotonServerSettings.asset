@@ -98,6 +98,24 @@ MonoBehaviour:
   - BlindFalse
   - ResetHand
   - A
+  - UpdateBetText
+  - UpdateSliderValue
+  - RaiseChipCount
+  - RaiseChipCountRPC
+  - UpdateUI
+  - UpdateRaiseAmountText
+  - SyncCallAmount
+  - UpdateCurrentB
+  - firstfalse
+  - UpdateCallAmount
+  - UpdateChip
+  - UpdatePotUI
+  - UpdatePot
+  - UpdateBet
+  - CallButton
+  - RaiseT
+  - CallAmountReset
+  - UpdateCallAmountText
   DisableAutoOpenWizard: 1
   ShowSettings: 0
   DevRegionSetOnce: 1

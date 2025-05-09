@@ -8,13 +8,15 @@ using TMPro;
 using System.Collections;
 using ExitGames.Client.Photon;
 using UnityEngine.UI;
+using System.Globalization;
 public class PlayerManager : MonoBehaviourPunCallbacks, IOnEventCallback
 
 
-{
+{public long currentRaiseAmount = 0;
+private ClickSpawner clickSpawner;
 	public List<PlayerPosition> playerPositions = new List<PlayerPosition>();
     private int dealerIndex = 0; // Assume the first player in the list is the dealer at the start
-	
+	private long newChipCount = 0;
 	public int currentSeat;
 	public HandRank bestHandRank;
 	public TMP_Text smallBlindText;
@@ -23,6 +25,7 @@ public class PlayerManager : MonoBehaviourPunCallbacks, IOnEventCallback
 	 public string Name;
 	 [SerializeField] private Slider betSlider;
 public TMP_Text betAmountText;
+public TextMeshProUGUI callAmountText;
 public Button confirmBetButton;
 	public GameObject smallBlindLogo;
 public GameObject bigBlindLogo;
@@ -35,10 +38,12 @@ public GameObject dealerLogo;
 public long chipCount;
 public bool InGame = false;
 public bool Blind = false;
-public bool FirstTurn = true;
+public long callAmount=0;
+public bool Raise = false;
 
     public List<Card> playerHand = new List<Card>();
-	public long currentBetThisRound = 0;
+	public long PlayersBet = 0;
+
     public enum PlayerPosition
     {
         None = -1,
@@ -64,7 +69,32 @@ public enum Statue
     }
 	
 	 public Statue statue;
+ private ClickSpawner FindClickSpawner(int seat)
+{
+    ClickSpawner[] spawners = FindObjectsOfType<ClickSpawner>();
+    Debug.Log("Found " + spawners.Length + " ClickSpawner(s) in the scene.");
+    foreach (ClickSpawner spawner in spawners)
+    {
+        // Log if the ClickSpawner is active
+        if (spawner.gameObject.activeSelf)
+        {
+            Debug.Log("Found active ClickSpawner with seat number: " + spawner.seatNumber);
+            if (spawner.seatNumber == seat)
+            {
+                return spawner;
+            }
+        }
+    }
+    return null;
+}
 
+   public void StandUp()
+    {
+        if (clickSpawner != null)
+        {
+            clickSpawner.OnStandUpClick();
+        }
+    }
 [PunRPC]
     public void SetCurrentSeat(int seat)
     {
@@ -72,7 +102,7 @@ public enum Statue
     }
 public void ResetBettingRound()
 {
-    currentBetThisRound = 0;
+    PlayersBet = 0;
 }
 
 [PunRPC]
@@ -81,19 +111,12 @@ void SetPlayerName(string name)
     nicknameText.text = name;
 	photonView.RPC("UpdateBlindUI", RpcTarget.AllBuffered);
 }
-public void EnableBettingUI()
-{
-
-}
-public void OnSliderValueChanged(long value)
-{
-    photonView.RPC("UpdateBetTextRPC", RpcTarget.All, (long)value);
-}
 [PunRPC]
-private void UpdateBetTextRPC(float value)
+public void CallAmountReset()
 {
-    betAmountText.text = $"Bet: {value:N0}"; // adds commas
+callAmount=0;
 }
+
 public void OnConfirmBetClicked()
 {
     
@@ -110,11 +133,130 @@ void Awake()
 		photonView.RPC("SetPlayerName", RpcTarget.AllBuffered, PhotonNetwork.NickName);
 		
 		
-    }}
+    }    }
+	
+
 	void Start()
-    {
-      
+    { GameManager gameManager = FindObjectOfType<GameManager>();
+        if (gameManager != null)
+        {
+            clickSpawner = gameManager.GetClickSpawnerBySeat(currentSeat);
+            if (clickSpawner != null)
+            {
+                Debug.Log("Found ClickSpawner for seat " + currentSeat);
+            }
+            else
+            {
+                Debug.LogWarning("ClickSpawner not found for seat " + currentSeat);
+            }
+        }
+      betSlider.onValueChanged.AddListener(OnSliderValueChange);
+	  
+	  betSlider.wholeNumbers = true;
+
+// Example: Set minimum raise to big blind and max to available chip count
+long minRaise = GameManager.BIG_BLIND_AMOUNT;
+long maxRaise = chipCount;
+
+betSlider.minValue = minRaise;
+betSlider.maxValue = maxRaise;
+betSlider.value = minRaise;  // Default to minimum
+
+OnSliderValueChange(betSlider.value); 
+
     }
+	public void CheckAndStandUpIfBroke()
+{Debug.Log($"[{PhotonNetwork.NickName}] Called check if broke.");
+    if (chipCount <= 0 && photonView.IsMine )
+    {
+        Debug.Log($"[{PhotonNetwork.NickName}] has 0 chips. Auto-standing up.");
+
+
+        StandUp();
+
+    
+}}
+private void OnSliderValueChange(float value)
+{
+    PlayersBet = (long)value;
+    photonView.RPC("UpdateRaiseAmountText", RpcTarget.All);
+}
+[PunRPC]
+private void RaiseChipCount(long raiseAmount)
+{
+    if (PhotonNetwork.IsMasterClient)
+    {
+        GameManager.Instance.pot += raiseAmount;
+
+        // Update global raise amount
+        GameManager.Instance.globalRaise = raiseAmount;
+
+        // Sync the call amount for all players based on the new global raise
+        photonView.RPC("SyncCallAmount", RpcTarget.AllBuffered, GameManager.Instance.globalRaise);
+
+        // Broadcast updated pot
+        GameManager.Instance.photonView.RPC("UpdatePotUI", RpcTarget.AllBuffered, GameManager.Instance.pot);
+    }
+
+    // These updates can still be done for all clients
+    photonView.RPC("UpdateBet", RpcTarget.AllBuffered, raiseAmount);
+    photonView.RPC("UpdateUI", RpcTarget.AllBuffered);
+    photonView.RPC("UpdateChip", RpcTarget.AllBuffered, raiseAmount);
+}
+
+public void OnRaiseButtonClicked()
+{
+	  
+     if (photonView.IsMine)
+    {
+        object[] content = new object[] { PlayersBet, PhotonNetwork.LocalPlayer.ActorNumber };
+        RaiseEventOptions options = new RaiseEventOptions { Receivers = ReceiverGroup.All };
+        PhotonNetwork.RaiseEvent(3, content, options, SendOptions.SendReliable);
+
+        if (UI != null)
+            UI.SetActive(false);
+RaiseNextPlayerEvent();
+		BroadcastCallAmount(PlayersBet);
+        GameManager.Instance.photonView.RPC("PlayerFinishedTurn", RpcTarget.MasterClient);
+		photonView.RPC("UpdateChip", RpcTarget.AllBuffered, PlayersBet);
+		
+		
+    }
+        
+}
+[PunRPC]
+public void SyncCallAmount(long globalRaise)
+{
+    callAmount = Math.Max(0, globalRaise);
+
+    if (callAmountText != null)
+        callAmountText.text = $"{FormatChipsWithSuffix(callAmount)}";
+
+    Debug.Log($"[SyncCallAmount] Set callAmount = {callAmount}");
+}
+public void BroadcastCallAmount(long amount)
+{
+    if (PhotonNetwork.IsMasterClient)
+    {
+        photonView.RPC("SyncCallAmount", RpcTarget.AllBuffered, amount);
+    }
+}
+[PunRPC]
+private void UpdateBet(long M)
+{GameManager.Instance.CurrentBet += M;
+}
+
+[PunRPC]
+private void UpdatePot(long M)
+{GameManager.Instance.potText.text = $"Pot: {FormatChipsWithSuffix(GameManager.Instance.pot)}";
+}
+
+[PunRPC]
+private void UpdateUI()
+{
+    if (GameManager.Instance.pot != null)
+        GameManager.Instance.potText.text = $"Pot: {FormatChipsWithSuffix(GameManager.Instance.pot)}";
+}
 [PunRPC]
 public void UpdateBlindUI()
 {
@@ -203,7 +345,7 @@ public void DetermineWinner()
             Debug.Log($"{photonView.Owner.NickName} TagObject assigned: {this.gameObject}");
 			PhotonNetwork.AddCallbackTarget(this); 
 			photonView.RPC("IsPlaying", RpcTarget.AllBuffered, (int)Statue.Waiting);
-			 
+			  
 			
 			GameManager.Instance.photonView.RPC("StartSit", RpcTarget.MasterClient);
 
@@ -215,9 +357,10 @@ public void IsPlaying(int statueValue)
 {
    statue = (Statue)statueValue;
 if (statue == Statue.Playing)
-    {
+    {if (PhotonNetwork.IsMasterClient)
+        {
         photonView.RPC("Roles", RpcTarget.AllBuffered);
-    }
+    }}
 }
 
 [PunRPC]
@@ -240,33 +383,25 @@ public void AddCardToPlayerHandRPC(int cardViewID, PhotonMessageInfo info)
 
             // Ensure the cards are correctly positioned
             TransformCardPositions();
-			StartCoroutine(delayedRole());
-				if(PhotonNetwork.IsMasterClient)
-				{
-photonView.RPC("PostBlinds", RpcTarget.All);
-} 
 
-
-        }
+     }
     }
 
     // Mark that the player is now in the game
     InGame = true;
-}
-public static string FormatChipsWithSuffix(long amount)
+}public static string FormatChipsWithSuffix(long amount)
 {
     if (amount >= 1_000_000_000_000)
-        return (amount / 1_000_000_000_000D).ToString("0.#") + "T";
+        return (amount / 1_000_000_000_000d).ToString("0.#", CultureInfo.InvariantCulture) + "T";
     if (amount >= 1_000_000_000)
-        return (amount / 1_000_000_000D).ToString("0.#") + "B";
+        return (amount / 1_000_000_000d).ToString("0.#", CultureInfo.InvariantCulture) + "B";
     if (amount >= 1_000_000)
-        return (amount / 1_000_000D).ToString("0.#") + "M";
+        return (amount / 1_000_000d).ToString("0.#", CultureInfo.InvariantCulture) + "M";
     if (amount >= 1_000)
-        return (amount / 1_000D).ToString("0.#") + "K";
+        return (amount / 1_000d).ToString("0.#", CultureInfo.InvariantCulture) + "K";
 
-    return amount.ToString("N0");
+    return amount.ToString("N0", CultureInfo.InvariantCulture);
 }
-
 [PunRPC]
 private void BlindTrue()
 {
@@ -278,6 +413,11 @@ Blind=true;
 private void BlindF()
 {
 Blind=false;
+}
+[PunRPC]
+private void RaiseT()
+{
+Raise=true;
 	
 }
  private void TransformCardPositions()
@@ -311,55 +451,65 @@ private void BlindFalse()
     Debug.Log($"BlindFalse RPC called for player: {photonView.Owner.NickName}, Blind set to: {Blind}");
 }
 [PunRPC]
+private void UpdateChip(long Raise)
+{
+    chipCount -= Raise; // Deduct the chips from the actual value
+    chipCountText.text = $"${chipCount.ToString("N0", CultureInfo.InvariantCulture)}";
+	Start();
+		
+}
+[PunRPC]
 public void PostBlinds()
 {
-if (FirstTurn && playerPosition == PlayerPosition.DEALER && !Blind)
-    {currentBetThisRound = GameManager.BIG_BLIND_AMOUNT;
+if (GameManager.Instance.FirstTurn && playerPosition == PlayerPosition.DEALER && !Blind)
+    {PlayersBet = GameManager.BIG_BLIND_AMOUNT;
         PostBlind(GameManager.BIG_BLIND_AMOUNT);
-		 smallBlindText.gameObject.SetActive(true);
-        bigBlindText.gameObject.SetActive(false);
-		photonView.RPC("BlindTrue", RpcTarget.All);  
+		 smallBlindText.gameObject.SetActive(false);
+        bigBlindText.gameObject.SetActive(true);
+ Blind = true;
         photonView.RPC("UpdateChipCountUI", RpcTarget.AllBuffered, chipCount);
-			 photonView.RPC("RaiseAmount", RpcTarget.All, 0);
-    }
-    else if (playerPosition == PlayerPosition.DEALER && !Blind){
-        Debug.Log("Posting SMALL blind for DEALER");
+			photonView.RPC("RaiseAmount", RpcTarget.All, (long)0);
+ GameManager.Instance.photonView.RPC("first", RpcTarget.AllBuffered);
+	}
+    else if (GameManager.Instance.FirstTurn  && playerPosition == PlayerPosition.UTG && !Blind){
+        Debug.Log("Posting SMALL blind for UTG");
+PlayersBet = GameManager.BIG_BLIND_AMOUNT;
+        PostBlind(GameManager.BIG_BLIND_AMOUNT);
+        smallBlindText.gameObject.SetActive(false);
+        bigBlindText.gameObject.SetActive(true);
+ Blind = true;
+        photonView.RPC("UpdateChipCountUI", RpcTarget.AllBuffered, chipCount);
+        	photonView.RPC("RaiseAmount", RpcTarget.All, (long)0);
 
-        PostBlind(GameManager.SMALL_BLIND_AMOUNT);
-        smallBlindText.gameObject.SetActive(true);
-        bigBlindText.gameObject.SetActive(false);
-photonView.RPC("BlindTrue", RpcTarget.All);  
-        photonView.RPC("UpdateChipCountUI", RpcTarget.AllBuffered, chipCount);
-        
-    }
-    else if (playerPosition == PlayerPosition.UTG && !Blind)
-{
+   }
+    else if (playerPosition == PlayerPosition.DEALER && !Blind)
+{GameManager.Instance.currentRaiseAmount = GameManager.SMALL_BLIND_AMOUNT;   
     Debug.Log("Posting BIG blind for UTG");
-
+ Blind = true;
     // Set CurrentBet to the big blind amount before posting
-    GameManager.CurrentBet = GameManager.BIG_BLIND_AMOUNT;
+    GameManager.Instance.CurrentBet = GameManager.SMALL_BLIND_AMOUNT;
 
     // Sync the current bet across all clients
-    photonView.RPC("CurrentBetSync", RpcTarget.All, GameManager.CurrentBet);
+GameManager.Instance.photonView.RPC("CurrentBetSync", RpcTarget.All, GameManager.Instance.CurrentBet);
 
     // Set the current player's bet this round
-    currentBetThisRound = GameManager.BIG_BLIND_AMOUNT;
+    PlayersBet = GameManager.SMALL_BLIND_AMOUNT;
 
     // Deduct chips and post blind
-    PostBlind(GameManager.BIG_BLIND_AMOUNT);
+    PostBlind(GameManager.SMALL_BLIND_AMOUNT);
 
-    smallBlindText.gameObject.SetActive(false);
-    bigBlindText.gameObject.SetActive(true);
-
-    photonView.RPC("BlindTrue", RpcTarget.All);
+    smallBlindText.gameObject.SetActive(true);
+    bigBlindText.gameObject.SetActive(false);
     photonView.RPC("UpdateChipCountUI", RpcTarget.AllBuffered, chipCount);
+
+		GameManager.Instance.currentRaiseAmount = GameManager.BIG_BLIND_AMOUNT;
 }
 
     else
     {
         Debug.Log("This player does not post a blind.");
     }
-	
+	   
 }
 	public void PostBlind(long amount)
 {
@@ -370,43 +520,23 @@ photonView.RPC("BlindTrue", RpcTarget.All);
     }
 
     chipCount -= amount;
-	 GameManager.CurrentBet = amount;
+	 GameManager.Instance.CurrentBet = amount;
         Debug.Log($"{Name} posts blind of {amount}");
     photonView.RPC("UpdateChipCountUI", RpcTarget.AllBuffered, chipCount);
-
-    // Only MasterClient updates the pot to avoid duplication
-    if (PhotonNetwork.IsMasterClient)
-    {
-        GameManager gm = FindObjectOfType<GameManager>();
-       gm.photonView.RPC("AddToPotRPC", RpcTarget.MasterClient, (long)amount);// You must define this method in GameManager
-    }
-
-    Debug.Log($"{PhotonNetwork.NickName} posted blind of {amount}");
-}
-[PunRPC]
-public void CurrentBetSync(long syncedBet)
+	if (PhotonNetwork.IsMasterClient)
 {
-    GameManager.CurrentBet = syncedBet;
-    Debug.Log($"CurrentBet synced to: {syncedBet}");
-}
-public void Bet(long amount)
-{
-    if (chipCount < amount) return;
+       GameManager.Instance.photonView.RPC("AddToPotRPC", RpcTarget.MasterClient, (long)amount, PhotonNetwork.NickName);// You must define this method in GameManager
+}}
 
-    chipCount -= amount;
-  photonView.RPC("UpdateChipCountUI", RpcTarget.AllBuffered, chipCount);
 
-    if (PhotonNetwork.IsMasterClient)
-    {
-        GameManager gm = FindObjectOfType<GameManager>();
-gm.photonView.RPC("AddToPotRPC", RpcTarget.MasterClient, (long)amount);    }
-}
 
 [PunRPC]
 public void UpdateChipCountUI(long newChipCount)
 {
     this.chipCount = newChipCount;
-    chipCountText.text = chipCount.ToString("N0"); // or FormatChipsWithSuffix(chipCount)
+  chipCountText.text = $"${chipCount.ToString("N0", CultureInfo.InvariantCulture)}";
+  long maxRaise = newChipCount;
+betSlider.maxValue = maxRaise;
 }
 [PunRPC]
 private void Roles()
@@ -448,6 +578,13 @@ dealerLogo.SetActive(false);
 			dealerLogo.SetActive(false);
         }
     }
+	if (PhotonNetwork.IsMasterClient)
+    {
+photonView.RPC("PostBlinds", RpcTarget.All);
+
+
+
+        }
 }
 
 
@@ -472,6 +609,37 @@ dealerLogo.SetActive(false);
             photonView.RPC("SetPlayerPosition", RpcTarget.All, playerPosition);
         }
     }
+	
+[PunRPC]
+public void CallButton()
+{
+    // Log the current callAmount
+    Debug.Log($"[CallButton] Player {photonView.Owner.NickName} is calling {callAmount}");
+
+    // Deduct chips and apply the callAmount
+    photonView.RPC("RaiseChipCount", RpcTarget.MasterClient, callAmount);
+
+    // Turn off UI and notify GameManager if it's the local player
+    if (photonView.IsMine && UI.activeSelf)
+    {
+        UI.SetActive(false);
+        GameManager.Instance.photonView.RPC("PlayerFinishedTurn", RpcTarget.MasterClient);
+        RaiseNextPlayerEvent();
+
+        Debug.Log("[CallButton] Player finished turn after calling.");
+    }
+
+    // Reset callAmount for the next player
+    photonView.RPC("CallAmountReset", RpcTarget.AllBuffered);
+
+    // Optional: sync again to make sure all players see 0 call amount (for UI)
+    photonView.RPC("SyncCallAmount", RpcTarget.AllBuffered, 0L);
+}
+
+
+		
+	
+
 [PunRPC]
 public void RotatePlayerPositions()
 {
@@ -718,6 +886,7 @@ public void FoldButtonClicked()
 photonView.RPC("InGameF", RpcTarget.AllBuffered);
 statue = Statue.Folded;
 photonView.RPC("BlindF", RpcTarget.All);
+
 GameManager.Instance.photonView.RPC("Reset", RpcTarget.All);
 GameManager.Instance.photonView.RPC("ResetTurnStatesForOthers", RpcTarget.All);
 					GameManager.Instance.photonView.RPC("New", RpcTarget.MasterClient);
@@ -738,74 +907,58 @@ private void InGameF()
 
 [PunRPC]
 private void RaiseAmount(long Amount)
-{GameManager.RaiseAmount = Amount;
-}
-    public void CheckButtonClicked()
 {
-	
-	if(GameManager.RaiseAmount> 0)
-	{
-		long betAmount = (long)betSlider.value;
-
-    if (betAmount > chipCount)
-    {
-        Debug.LogWarning("Cannot bet more than you have!");
-        return;
-    }
-
-    chipCount -= betAmount;
-    currentBetThisRound += betAmount;
-GameManager.CurrentBet = (long)Mathf.Max((float)GameManager.CurrentBet, betAmount);
-GameManager.CurrentBet = (long)GameManager.CurrentBet;
-    photonView.RPC("UpdateChipCountUI", RpcTarget.AllBuffered, chipCount);
-    photonView.RPC("CurrentBetSync", RpcTarget.All, GameManager.CurrentBet);
-
-
-    betSlider.gameObject.SetActive(false);
-    betAmountText.gameObject.SetActive(false);
-    confirmBetButton.gameObject.SetActive(false);
-
-    GameManager.Instance.photonView.RPC("PlayerFinishedTurn", RpcTarget.MasterClient);
-    RaiseNextPlayerEvent();
-	}
-	else{
-	    betSlider.minValue = GameManager.CurrentBet; // can't bet less than current bet
-    betSlider.maxValue = chipCount;
-    betSlider.value = GameManager.CurrentBet;
-
-    UpdateBetText(betSlider.value);
-photonView.RPC("UpdateBetTextRPC", RpcTarget.AllBuffered, betSlider.value);
-    betSlider.gameObject.SetActive(true);
-    betAmountText.gameObject.SetActive(true);
-    confirmBetButton.gameObject.SetActive(true);
-	
-    long amountToCall = GameManager.CurrentBet - currentBetThisRound;
-	
-    if (amountToCall > 0 && chipCount >= amountToCall)
-    {
-        chipCount -= amountToCall;
-        currentBetThisRound += amountToCall;
-
-        photonView.RPC("UpdateChipCountUI", RpcTarget.AllBuffered, chipCount);
-        Debug.Log($"{PhotonNetwork.NickName} called {amountToCall}");
-    }
-    else
-    {
-        Debug.Log("Nothing to call or not enough chips");
-    }
-
-    if (photonView.IsMine && UI.activeSelf)
+}
+public void CheckButtonClicked()
+{
+        
+		if(callAmount==GameManager.BIG_BLIND_AMOUNT)
+		{
+			if (photonView.IsMine && UI.activeSelf)
     {
         if (UI != null)
             UI.SetActive(false);
         GameManager.Instance.photonView.RPC("PlayerFinishedTurn", RpcTarget.MasterClient);
         RaiseNextPlayerEvent();
+		Debug.Log("Player checked.");
     }
-}}
-private void UpdateBetText(float value)
-{
-    betAmountText.text = $"Bet: {value:N0}";
+		}
+		else {photonView.RPC("RaiseChipCount", RpcTarget.AllBuffered, callAmount);
+		if (photonView.IsMine && UI.activeSelf)
+    {
+        if (UI != null)
+            UI.SetActive(false);
+        GameManager.Instance.photonView.RPC("PlayerFinishedTurn", RpcTarget.MasterClient);
+        RaiseNextPlayerEvent();
+    }}
+		
+		
+        
 }
+
+ public PhotonView FindLocalPlayerPhotonView()
+    {
+        GameObject[] players = GameObject.FindGameObjectsWithTag("Player");
+
+        foreach (GameObject player in players)
+        {
+            PhotonView photonView = player.GetComponent<PhotonView>();
+            if (photonView != null && photonView.Owner == PhotonNetwork.LocalPlayer)
+            {
+                return photonView;
+            }
+        }
+
+        return null; // Return null if not found (handle this case in your logic)
+    }
+	
+	[PunRPC]
+private void UpdateRaiseAmountText()
+{
+if (betAmountText != null)
+betAmountText.text = $"{FormatChipsWithSuffix(PlayersBet)}";
+}
+
    private void RaiseNextPlayerEvent()
 {
     // Get the list of players in the room
@@ -891,8 +1044,23 @@ public void OnEvent(EventData photonEvent)
 			
         }
     }
+	
 }
+else if (photonEvent.Code == 3) // Raise action
+{
+    object[] data = (object[])photonEvent.CustomData;
+    long raiseAmount = (long)data[0];
+    int actorNumber = (int)data[1];
 
+    GameManager.Instance.pot += raiseAmount;
+    GameManager.Instance.globalRaise = raiseAmount;
+
+    // Update UI for all clients
+    GameManager.Instance.photonView.RPC("UpdatePotUI", RpcTarget.AllBuffered, GameManager.Instance.pot);
+    photonView.RPC("SyncCallAmount", RpcTarget.AllBuffered, raiseAmount);
+
+    Debug.Log($"[RaiseEvent] Player {actorNumber} raised {raiseAmount}. Pot is now {GameManager.Instance.pot}");
+}
 }
 
 private void HandleUIForPlayer()

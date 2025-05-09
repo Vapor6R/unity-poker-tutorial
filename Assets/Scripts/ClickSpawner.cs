@@ -6,8 +6,8 @@ using System.Collections;
 using System.Collections.Generic;
 using Photon.Realtime;
 public class ClickSpawner : MonoBehaviourPun
-{
-
+{ public GameObject warningPanel;
+   private PlayerManager localPlayerManager;
 	public int seatNumber;
     public GameObject objectPrefab;  // Assign the prefab in Inspector
     public Button[] seatButtons;
@@ -34,7 +34,16 @@ private HashSet<int> rpcHiddenSeatIndices = new HashSet<int>(); // track global 
         photonView = GetComponent<PhotonView>(); // Get PhotonView component
 
     }
-
+ private PlayerManager FindLocalPlayerManager()
+    {
+        PlayerManager[] allPlayers = FindObjectsOfType<PlayerManager>();
+        foreach (PlayerManager pm in allPlayers)
+        {
+            if (pm.photonView.IsMine)
+                return pm;
+        }
+        return null;
+    }
    void OnButtonClick()
     {
         Debug.Log($"[CLICKED] Button Index: {buttonIndex}, Seat Number: {seatNumber}");
@@ -45,7 +54,19 @@ private HashSet<int> rpcHiddenSeatIndices = new HashSet<int>(); // track global 
         Quaternion spawnRotation = Quaternion.Euler(0, 0, 0);
 			
              playerInstance = PhotonNetwork.Instantiate(objectPrefab.name, spawnPosition, spawnRotation, 0);
+localPlayerManager = FindLocalPlayerManager();
+if (localPlayerManager == null)
+        {
+            Debug.LogWarning("Local PlayerManager not found.");
+            return;
+        }
 
+        if (localPlayerManager.chipCount <= 0)
+        {
+            Debug.LogWarning("Not enough chips to sit.");
+            ShowChipWarning();
+            return;
+        }
 	if (standUpButton != null)
         {
             standUpButton.onClick.AddListener(OnStandUpClick);
@@ -72,11 +93,35 @@ private HashSet<int> rpcHiddenSeatIndices = new HashSet<int>(); // track global 
        OnButton1Click();
 
     }
+	 void ShowChipWarning()
+    {
+        if (warningPanel != null)
+        {
+            warningPanel.SetActive(true);
+            StartCoroutine(HideWarningAfterDelay());
+        }
+    }
+
+    IEnumerator HideWarningAfterDelay()
+    {
+        yield return new WaitForSeconds(2f);
+        warningPanel.SetActive(false);
+    }
 public IEnumerator AssignSeat()
 { yield return new WaitForSeconds(2f); // Adjust the delay time as needed
 	{
 }}
-void OnStandUpClick()
+void Update()
+    {
+        // Check if the playerInstance exists and is active in the scene
+        if (playerInstance == null || !playerInstance.activeInHierarchy)
+        {
+            // If the player instance is inactive or destroyed, re-enable the button
+            spawnButton.interactable = true;
+        }
+
+    }
+public void OnStandUpClick()
 {
     if (playerInstance != null)
     {

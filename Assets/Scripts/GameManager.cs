@@ -9,6 +9,7 @@ using System.Linq;
 using ExitGames.Client.Photon;
 using Hashtable = ExitGames.Client.Photon.Hashtable;
 using System;
+using System.Globalization;
 public enum PokerSeat
 {
     Dealer,
@@ -32,7 +33,9 @@ public enum Statue
         AllIn = 5, // 5th player to act
     }
 public class GameManager : MonoBehaviourPunCallbacks
-{  public static long RaiseAmount = 0;
+{
+	private Dictionary<int, ClickSpawner> spawnersBySeat = new Dictionary<int, ClickSpawner>();
+	public bool FirstTurn = true;
 public TMP_Text potText;
     public const long SMALL_BLIND_AMOUNT = 100000000000;
     public const long BIG_BLIND_AMOUNT = 200000000000;
@@ -40,8 +43,9 @@ private bool turn = false;
 	    private bool flop = false;
     private bool river = false;
 	private int playersFinished = 0;
-	public int currentRaiseAmount = 0;
-public static long CurrentBet = 0;
+	public long currentRaiseAmount = 0;
+public long CurrentBet = 0;
+public long globalRaise = 0; 
 	public long pot = 0;
 	 private int totalPlayers;
 	    public Dictionary<int, PokerSeat> playerSeats = new Dictionary<int, PokerSeat>();
@@ -92,6 +96,13 @@ public Statue[] StatueNow = new Statue[]
 };
 [Header("Debug Only")]
     [SerializeField] private long currentBetInspectorView;
+[PunRPC]
+public void CurrentBetSync(long syncedBet)
+{
+currentRaiseAmount = syncedBet;
+Debug.Log($"currentRaiseAmount synced to: {syncedBet}");
+// Optionally update pot display or trigger player UI refresh
+}
 
 [PunRPC]
 public void ResetBetsAfterFlop()
@@ -101,7 +112,7 @@ public void ResetBetsAfterFlop()
     // Reset each player's current bet for this round
     foreach (var player in FindObjectsOfType<PlayerManager>())
     {
-        player.currentBetThisRound = 0;
+        player.PlayersBet = 0;
     }
 }
 public void Check()
@@ -120,26 +131,40 @@ public override void OnMasterClientSwitched(Player newMasterClient)
 {
     Debug.Log($"New Master Client is: {newMasterClient.NickName}");
 }
+public static string FormatChipsWithSuffix(long amount)
+{
+    if (amount >= 1_000_000_000_000)
+        return (amount / 1_000_000_000_000d).ToString("0.#", CultureInfo.InvariantCulture) + "T";
+    if (amount >= 1_000_000_000)
+        return (amount / 1_000_000_000d).ToString("0.#", CultureInfo.InvariantCulture) + "B";
+    if (amount >= 1_000_000)
+        return (amount / 1_000_000d).ToString("0.#", CultureInfo.InvariantCulture) + "M";
+    if (amount >= 1_000)
+        return (amount / 1_000d).ToString("0.#", CultureInfo.InvariantCulture) + "K";
+
+    return amount.ToString("N0", CultureInfo.InvariantCulture);
+}
  [PunRPC]
     private void ResetTurnStatesForOthers()
     {
         playersFinished = 0;
         // Handle any additional state reset logic for other players
     }
-	
-	public void UpdatePotUI()
-{
-    if (potText != null)
-    {
-        potText.text = $"Pot: {pot}";
-    }
-}
 [PunRPC]
-public void AddToPotRPC(long amount)
+public void UpdatePotUI(long pot)
 {
-    pot += amount;
-    Debug.Log($"Pot increased by {amount}. Total pot: {pot}");
-    UpdatePotUI();
+    GameManager.Instance.pot = pot;
+    GameManager.Instance.potText.text = $"Pot: {FormatChipsWithSuffix(pot)}";
+}
+
+
+
+[PunRPC]
+public void AddToPotRPC(long amount, string senderName)
+{
+pot += amount;
+Debug.Log($"Pot increased by {amount} from {senderName}. Total pot: {pot}");
+photonView.RPC("UpdatePotUI", RpcTarget.AllBuffered, pot);
 }
 [PunRPC]
 private void Reset()
@@ -150,8 +175,12 @@ private void Reset()
 }
 	
 	
-	
-	
+
+	[PunRPC]
+	public void firstfalse()
+    {
+        FirstTurn = false;
+	  }
 	[PunRPC]
 	public void floptrue()
     {
@@ -174,13 +203,23 @@ private void Reset()
         CurrentBet = 0;
 		photonView.RPC("UpdateCallAmountText", RpcTarget.All, CurrentBet);
     }
-	
+	[PunRPC]
+private void UpdateCallAmountText(long CurrentBet)
+{
+	foreach (Photon.Realtime.Player player in PhotonNetwork.PlayerList)
+{
+    if (player.TagObject is GameObject obj && obj.TryGetComponent(out PlayerManager pm))
+    {
+        pm.photonView.RPC("SyncCallAmount", player,CurrentBet );
+    }
+}
+}
 [PunRPC]
     public void PlayerFinishedTurn()
     {
         playersFinished++;
         if (playersFinished >= totalPlayers && !flop)
-        {
+        {photonView.RPC("firstfalse", RpcTarget.AllBuffered);
             photonView.RPC("floptrue", RpcTarget.All);
             DeckInstance.photonView.RPC("DistributeAndAddCommunityCards", RpcTarget.AllViaServer);
             photonView.RPC("ResetTurnStatesForOthers", RpcTarget.All);
@@ -264,7 +303,7 @@ public void DetermineWinner()
 
         // Reset pot for next round
         pot = 0;
-		UpdatePotUI();
+		 photonView.RPC("UpdatePotUI", RpcTarget.AllBuffered,pot);
     }
 }
 [PunRPC]
@@ -291,7 +330,6 @@ if (photonView.IsMine)
             photonView.RPC("ResetAmount", RpcTarget.All);
             
 			photonView.RPC("lastf", RpcTarget.All);
-			photonView.RPC("firstfalse", RpcTarget.All);
 			StartCoroutine(ResetRound());
 			
 			Rotate();
@@ -374,11 +412,25 @@ public void AssignPlayerSeats()
 
     public int PlayerCount => PlayersInGame.Count;
     void Start()
-    { 
+    { ClickSpawner[] spawners = FindObjectsOfType<ClickSpawner>();
+        foreach (ClickSpawner spawner in spawners)
+        {
+            spawnersBySeat[spawner.seatNumber] = spawner;
+        }
+
+        Debug.Log("Stored " + spawnersBySeat.Count + " ClickSpawner(s) in the dictionary.");
         if (PhotonNetwork.IsMasterClient)
         {
             // Master client setup (if needed)
         }
+    }
+	public ClickSpawner GetClickSpawnerBySeat(int seatNumber)
+    {
+        if (spawnersBySeat.ContainsKey(seatNumber))
+        {
+            return spawnersBySeat[seatNumber];
+        }
+        return null;  // If not found, return null
     }
 public override void OnPlayerEnteredRoom(Player newPlayer)
     {
@@ -439,14 +491,19 @@ photonView.RPC("RestartGameRPC", RpcTarget.MasterClient);
 
 			}
         }
-    }   }   }
+    }   }   
+	foreach (PlayerManager player in FindObjectsOfType<PlayerManager>())
+    {
+        player.CheckAndStandUpIfBroke();
+    }}
 	[PunRPC]
 	private void New()
 	{ photonView.RPC("ProgressF", RpcTarget.All);
 	if(PhotonNetwork.IsMasterClient)
 		{
 	StartSit();
-	}}
+	}
+	 }
 	
 	[PunRPC]
 	private void ProgressF()
