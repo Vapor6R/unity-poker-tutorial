@@ -39,9 +39,7 @@ MonoBehaviour:
   - DestroySpaceship
   - Fire
   - RespawnSpaceship
-  - AddCardToPlayerHandRPC
   - AddCommunityCardRPC
-  - AddPlayerToGameRPC
   - ClearCards
   - ClearCommunityCards
   - ClearHand
@@ -51,71 +49,69 @@ MonoBehaviour:
   - DealTurnCardRPC
   - DistributeAndAddCommunityCards
   - DistributeCardsRPC
-  - HandleUIForPlayerUTG
-  - HideSeatForAll
-  - InGameF
+  - HideButtonRPC
   - InitializeCard
   - InitializeDeck
-  - IsPlaying
-  - New
-  - ProgressF
-  - ProgressTrue
-  - RestartGameRPC
   - RestartRPC
-  - roles
-  - RotatePlayerPositions
-  - SetCurrentSeat
-  - SetPlayerPosition
   - ShuffleDeckRPC
   - StartSit
-  - Roles
-  - AddPlayerToList
+  - IsPlaying
+  - SetCurrentSeat
+  - RestartGameRPC
+  - AddCardToPlayerHandRPC
+  - CheckAndStandUpIfBroke
+  - HandleUIForPlayerUTG
+  - first
+  - firstfalse
   - floptrue
   - PlayerFinishedTurn
-  - ResetAmount
-  - ResetTurnStatesForOthers
+  - ProgressF
+  - ProgressTrue
   - rivertrue
   - turntrue
+  - UpdateRaiseAmountText
+  - SetPlayerName
+  - UpdateChipCount
+  - ResetTurnStatesForOthers
+  - UpdateChip
+  - UpdateCallAmount
+  - ShowOff
+  - AddCommunityCardToHand
+  - New
+  - RotatePlayerPositions
+  - UpdateRaiseSliderMaxValue
+  - SetSliderToCallAmount
+  - UpdatePotAmountRPC
   - PostBlinds
-  - UpdateBlindUI
-  - BlindTrue
-  - BlindF
-  - Reset
-  - AddCommunityCardsRPC
+  - AddToPot
+  - UpdatePot
+  - UpdateUI
+  - EvalForAll
   - EvaluateHand
   - ReceiveWinnings
-  - AddToPot
-  - AddToPotRPC
-  - NameX
-  - UpdateChipCountUI
-  - SetPlayerName
-  - CurrentBetSync
-  - ResetBetsAfterFlop
-  - RaiseAmount
-  - UpdateBetTextRPC
-  - ReEnableSeatButton
-  - HideButtonRPC
-  - BlindFalse
-  - ResetHand
-  - A
-  - UpdateBetText
-  - UpdateSliderValue
-  - RaiseChipCount
-  - RaiseChipCountRPC
-  - UpdateUI
-  - UpdateRaiseAmountText
-  - SyncCallAmount
-  - UpdateCurrentB
-  - firstfalse
-  - UpdateCallAmount
-  - UpdateChip
+  - AddCommunityCardsRPC
   - UpdatePotUI
-  - UpdatePot
-  - UpdateBet
-  - CallButton
-  - RaiseT
+  - Reset
+  - SendHandResultToMaster
+  - RevealAllCards
   - CallAmountReset
-  - UpdateCallAmountText
+  - ResetAmount
+  - AssignPositions
+  - Check
+  - EvaluateHandRPC
+  - DebugShowHand
+  - ReceiveHandForDebug
+  - ShareHandWithMaster
+  - ForceStandUp
+  - AddPlayerToList
+  - AssignPositionRPC
+  - ResetTurnStatesRaise
+  - SetStatueToWaiting
+  - Called
+  - hasEvaluatedF
+  - gametrue
+  - hasEvaluatedf
+  - Resetstate
   DisableAutoOpenWizard: 1
   ShowSettings: 0
   DevRegionSetOnce: 1

@@ -46,24 +46,24 @@ private HashSet<int> rpcHiddenSeatIndices = new HashSet<int>(); // track global 
     }
    void OnButtonClick()
     {
-        Debug.Log($"[CLICKED] Button Index: {buttonIndex}, Seat Number: {seatNumber}");
+        //Debug.Log($"[CLICKED] Button Index: {buttonIndex}, Seat Number: {seatNumber}");
 
         if (PhotonNetwork.IsConnectedAndReady)
         {
 			        Vector3 spawnPosition = spawnButton.transform.position;
         Quaternion spawnRotation = Quaternion.Euler(0, 0, 0);
 			
-             playerInstance = PhotonNetwork.Instantiate(objectPrefab.name, spawnPosition, spawnRotation, 0);
+playerInstance = PhotonNetwork.Instantiate(objectPrefab.name, spawnPosition, spawnRotation, 0);
 localPlayerManager = FindLocalPlayerManager();
 if (localPlayerManager == null)
         {
-            Debug.LogWarning("Local PlayerManager not found.");
+            //Debug.LogWarning("Local PlayerManager not found.");
             return;
         }
 
         if (localPlayerManager.chipCount <= 0)
         {
-            Debug.LogWarning("Not enough chips to sit.");
+            //Debug.LogWarning("Not enough chips to sit.");
             ShowChipWarning();
             return;
         }
@@ -77,17 +77,17 @@ if (localPlayerManager == null)
             if (playerManager != null)
             {
                playerManager.photonView.RPC("SetCurrentSeat", RpcTarget.AllBuffered, seatNumber);
-                Debug.Log("[OK] Assigned seat number: " + seatNumber);
+                //Debug.Log("[OK] Assigned seat number: " + seatNumber);
 				playerManager.currentSeat = seatNumber;
             }
             else
             {
-                Debug.LogWarning("[ERROR] PlayerManager not found on instantiated object!");
+                //Debug.LogWarning("[ERROR] PlayerManager not found on instantiated object!");
             }
         }
         else
         {
-            Debug.LogWarning("Photon not connected!");
+            //Debug.LogWarning("Photon not connected!");
         }
 
        OnButton1Click();
@@ -123,12 +123,34 @@ void Update()
     }
 public void OnStandUpClick()
 {
+    if (playerInstance == null)
+    {
+        // Attempt to find the local player's instance dynamically
+        GameObject[] playerObjects = GameObject.FindGameObjectsWithTag("Player");
+
+        foreach (GameObject playerObj in playerObjects)
+        {
+            PhotonView view = playerObj.GetComponent<PhotonView>();
+            if (view != null && view.IsMine)
+            {
+                playerInstance = playerObj;
+                break;
+            }
+        }
+    }
+
     if (playerInstance != null)
     {
         playerManager = playerInstance.GetComponent<PlayerManager>();
         PhotonNetwork.Destroy(playerInstance);
-
         playerInstance = null;
+        Debug.Log("[ClickSpawner] Local player stood up.");
+    }
+    else
+    {
+        Debug.LogWarning("[ClickSpawner] Could not find local player instance to stand up.");
+    }
+
 		if (PhotonNetwork.IsMasterClient)
 {
     // Step 3: Get the oldest player (the one who joined first)
@@ -153,7 +175,7 @@ public void OnStandUpClick()
 		 
     }
 }
-    }
+    
 
     // ✅ Re-enable this player's seat
     if (localSeatIndex >= 0 && localSeatIndex < seatButtons.Length)
@@ -213,7 +235,7 @@ public void HideButtonRPC(int seatIndex)
     if (seatIndex >= 0 && seatIndex < seatButtons.Length)
     {
         seatButtons[seatIndex].gameObject.SetActive(false);
-        Debug.Log($"[RPC] Hiding seat index {seatIndex}");
+        //Debug.Log($"[RPC] Hiding seat index {seatIndex}");
     }
 }
 void HideOtherSeatsForLocal()
@@ -226,7 +248,7 @@ void HideOtherSeatsForLocal()
         {
             seatButtons[i].gameObject.SetActive(false);
             locallyHiddenButtons[i] = seatButtons[i];
-            Debug.Log($"Locally hiding: {seatButtons[i].name}");
+            //Debug.Log($"Locally hiding: {seatButtons[i].name}");
         }
     }
 }
@@ -237,6 +259,6 @@ void HideOtherSeatsForLocal()
     localSeatIndex = seatNumber; // Store the seat this player clicked
     photonView.RPC("HideButtonRPC", RpcTarget.AllBuffered, seatNumber);
 
-    Debug.Log("Buttons have been swapped and hidden.");
+    //Debug.Log("Buttons have been swapped and hidden.");
 }
 }

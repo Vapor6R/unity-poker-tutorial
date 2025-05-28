@@ -10,112 +10,88 @@ using ExitGames.Client.Photon;
 using Hashtable = ExitGames.Client.Photon.Hashtable;
 using System;
 using System.Globalization;
-public enum PokerSeat
-{
-    Dealer,
-    UTG,
-    UTG1,  // Using UTG1 instead of "UTG+1" since "+" is invalid in enum names
-    Seat4,
-    Seat5,
-    Seat6,
-    Seat7,
-    Seat8,
-    Seat9
-}
+
+using System.Linq;
 public enum Statue
     {
         None = -1,
-        Waiting = 0,    // Dealer position
-        Playing = 1,       // Under the Gun (first player to act after the blinds)
-        Checked = 2, // UTG+1 (second player to act)
-        Raise = 3, // 3rd player to act
-        Folded = 4, // 4th player to act
-        AllIn = 5, // 5th player to act
+        Waiting = 0,  
+        Playing = 1,    
+        Checked = 2,
+        Raise = 3,
+        Folded = 4,
+        AllIn = 5,
     }
+	
 public class GameManager : MonoBehaviourPunCallbacks
-{
-	private Dictionary<int, ClickSpawner> spawnersBySeat = new Dictionary<int, ClickSpawner>();
+{   
+private List<HandResult> results = new List<HandResult>();
+ public List<Player> PlayersInGame = new List<Player>();
+[SerializeField] private List<string> playerNamesInGame = new List<string>();
+	public int PlayerCount => PlayersInGame.Count;
+	private int handResultsReceived = 0;
+private bool hasEvaluated = false;
+	private ClickSpawner  clickSpawner ;
+	private bool positionsAlreadyAssigned = false;
+	public List<PlayerManager> allPlayers;
+	public TMP_Text potText;
+	    public const long SMALL_BLIND_AMOUNT = 100;
+    public const long BIG_BLIND_AMOUNT = 200;
+		public long potAmount = 0;
+public HashSet<PlayerPosition> AssignedPositions = new HashSet<PlayerPosition>();
+public static GameManager Instance { get; private set; }
+    public bool Progress = false;
+		public Deck DeckInstance;
+			public int playersFinished = 0;
+				 public int totalPlayers;
+				 public bool turn = false;
+	    public bool flop = false;
+    public bool river = false;
 	public bool FirstTurn = true;
-public TMP_Text potText;
-    public const long SMALL_BLIND_AMOUNT = 100000000000;
-    public const long BIG_BLIND_AMOUNT = 200000000000;
-private bool turn = false;
-	    private bool flop = false;
-    private bool river = false;
-	private int playersFinished = 0;
-	public long currentRaiseAmount = 0;
-public long CurrentBet = 0;
-public long globalRaise = 0; 
-	public long pot = 0;
-	 private int totalPlayers;
-	    public Dictionary<int, PokerSeat> playerSeats = new Dictionary<int, PokerSeat>();
-	public Deck DeckInstance;
-    public GameObject UIPanel;  // The single UIPanel for all players
-public List<Player> PlayersInGame = new List<Player>();
-[Header("Debug - View in Inspector")]
-    [SerializeField] private List<string> playerNamesInGame = new List<string>();
-public Statue statue;
-    [System.Serializable]
-    public class PlayerSeatEntry
-    {
-        public int actorNumber;
-        public PokerSeat seat;
-		public int statue;
-    }
-public bool Progress = false;
-    public List<PlayerSeatEntry> playerSeatList = new List<PlayerSeatEntry>();
-    public static GameManager Instance { get; private set; }
-public PlayerPosition playerPosition;
-public Statue[] StatueNow = new Statue[]
-{
-    Statue.Waiting,
-    Statue.Playing,
-    Statue.Checked,
-    Statue.Raise,
-    Statue.Folded,
-    Statue.AllIn,
-};
-    [System.Serializable]
-    public class PlayerPosition
-    {
-        public string playerName;
-        public string position;
-        public string role;
-    }
-	private PokerSeat[] seatOrder = new PokerSeat[]
-{
-    PokerSeat.Dealer,
-    PokerSeat.UTG,
-    PokerSeat.UTG1,
-    PokerSeat.Seat4,
-    PokerSeat.Seat5,
-    PokerSeat.Seat6,
-    PokerSeat.Seat7,
-    PokerSeat.Seat8,
-    PokerSeat.Seat9
-};
-[Header("Debug Only")]
-    [SerializeField] private long currentBetInspectorView;
-[PunRPC]
-public void CurrentBetSync(long syncedBet)
-{
-currentRaiseAmount = syncedBet;
-Debug.Log($"currentRaiseAmount synced to: {syncedBet}");
-// Optionally update pot display or trigger player UI refresh
+	public long callAmount = 0;
+	private Dictionary<string, (HandRank rank, List<int> rankValues)> playerResults =
+    new Dictionary<string, (HandRank, List<int>)>();
+public long CallAmount 
+{ 
+    get => callAmount; 
+    set => callAmount = value; 
 }
-
-[PunRPC]
-public void ResetBetsAfterFlop()
-{
-    CurrentBet = 0;
-
-    // Reset each player's current bet for this round
-    foreach (var player in FindObjectsOfType<PlayerManager>())
+    void Start()
     {
-        player.PlayersBet = 0;
+		clickSpawner = FindObjectOfType<ClickSpawner>();
+        if(clickSpawner == null)
+
+
+           photonView.RPC("first", RpcTarget.All);
+    }
+	public void LogPlayersInGame()
+{
+    Debug.Log("==== Players In Game ====");
+    foreach (var p in PlayersInGame)
+    {
+        Debug.Log($"Player: {p.NickName}, ActorNumber: {p.ActorNumber}");
     }
 }
-public void Check()
+   [PunRPC]
+    void AddPlayerToList(int actorNumber)
+    {
+        Player player = PhotonNetwork.CurrentRoom.GetPlayer(actorNumber);
+        if (player != null && !GameManager.Instance.PlayersInGame.Contains(player))
+        {
+            GameManager.Instance.PlayersInGame.Add(player);
+
+        }
+    }
+	private void UpdatePlayerNamesInInspector()
+    {
+        playerNamesInGame.Clear();
+        foreach (var player in PlayersInGame)
+        {
+            playerNamesInGame.Add(player.NickName);
+        }
+    }
+
+	public void Check()
 {
     PlayerManager[] activePlayers = FindObjectsOfType<PlayerManager>();
 
@@ -124,57 +100,172 @@ public void Check()
         photonView.RPC("ProgressF", RpcTarget.All);
     }
 
-    photonView.RPC("ProgressF", RpcTarget.All); }
-
-
-public override void OnMasterClientSwitched(Player newMasterClient)
+    }
+	public void UnregisterPosition(PlayerPosition position)
 {
-    Debug.Log($"New Master Client is: {newMasterClient.NickName}");
-}
-public static string FormatChipsWithSuffix(long amount)
-{
-    if (amount >= 1_000_000_000_000)
-        return (amount / 1_000_000_000_000d).ToString("0.#", CultureInfo.InvariantCulture) + "T";
-    if (amount >= 1_000_000_000)
-        return (amount / 1_000_000_000d).ToString("0.#", CultureInfo.InvariantCulture) + "B";
-    if (amount >= 1_000_000)
-        return (amount / 1_000_000d).ToString("0.#", CultureInfo.InvariantCulture) + "M";
-    if (amount >= 1_000)
-        return (amount / 1_000d).ToString("0.#", CultureInfo.InvariantCulture) + "K";
-
-    return amount.ToString("N0", CultureInfo.InvariantCulture);
-}
- [PunRPC]
-    private void ResetTurnStatesForOthers()
+    if (AssignedPositions.Contains(position))
     {
-        playersFinished = 0;
-        // Handle any additional state reset logic for other players
+        AssignedPositions.Remove(position);
+    }
+
+
+}
+public void RegisterPosition(PlayerPosition position)
+    {
+        AssignedPositions.Add(position);
+    }
+public bool IsPositionAvailable(PlayerPosition position)
+    {
+        return !AssignedPositions.Contains(position);
+    }
+public void ReceivePlayerResult(string playerName, HandRank rank, List<int> rankValues)
+{
+    playerResults[playerName] = (rank, rankValues);
+    handResultsReceived++;
+
+    Debug.Log($"Got result from {playerName}: {rank} ({string.Join(", ", rankValues)})");
+
+    if (handResultsReceived >= totalPlayers)
+    {
+        DetermineWinner();
+
+		playerResults.Clear();
+        handResultsReceived = 0;
+    }
+}
+   private void DetermineWinner()
+{
+    var winner = playerResults
+        .OrderByDescending(entry => entry.Value.rank)
+        .ThenByDescending(entry => entry.Value.rankValues, new LexicographicComparer())
+        .First();
+
+    string winnerName = winner.Key;
+    var (rank, rankValues) = winner.Value;
+
+    Debug.Log($"🏆 Winner: {winnerName} | Rank: {rank} | Kickers: {string.Join(", ", rankValues)}");
+	    AwardPotToWinner(winner.Key);
+    playerResults.Clear();
+}
+
+    private void AwardPotToWinner(string winnerName)
+    {
+        
+        PlayerManager winnerPM = FindObjectsOfType<PlayerManager>()
+            .FirstOrDefault(pm => pm.photonView.Owner.NickName == winnerName);
+
+        if (winnerPM != null)
+        {
+            winnerPM.AddChips(potAmount);
+
+            Debug.Log($"{winnerName} awarded {potAmount} chips!");
+            potAmount = 0;
+        }
+        else
+        {
+            Debug.LogError("Winner player not found to award pot.");
+        }
+
     }
 [PunRPC]
-public void UpdatePotUI(long pot)
+    public void AddToPot(long amount)
+    {
+        potAmount += amount;
+        UpdatePotUI(potAmount);
+    }
+[PunRPC]
+    public void UpdatePotUI(long x)
+    {
+        if (potText != null)
+            potText.text = $"Pot: {x}";
+    }
+public override void OnPlayerEnteredRoom(Player newPlayer)
+    {
+	totalPlayers = PhotonNetwork.CurrentRoom.PlayerCount;}
+	public IEnumerator DelayedRiver()
 {
-    GameManager.Instance.pot = pot;
-    GameManager.Instance.potText.text = $"Pot: {FormatChipsWithSuffix(pot)}";
-}
+    yield return new WaitForSeconds(2f);
+if (flop && turn && !river){
 
+           PhotonView localPhotonView = FindLocalPlayerPhotonView();
+        if (localPhotonView != null)
+        {
+            PlayerManager playerManager = localPhotonView.GetComponent<PlayerManager>();
+            if (playerManager != null)
+            { River();
+    photonView.RPC("rivertrue", RpcTarget.All);
+    playerManager.photonView.RPC("DeductChipsRPC", RpcTarget.All);
 
+    photonView.RPC("UpdateCallAmountText", RpcTarget.All);
+}}}
+StartCoroutine(DelayedDW()); }
 
 [PunRPC]
-public void AddToPotRPC(long amount, string senderName)
-{
-pot += amount;
-Debug.Log($"Pot increased by {amount} from {senderName}. Total pot: {pot}");
-photonView.RPC("UpdatePotUI", RpcTarget.AllBuffered, pot);
-}
-[PunRPC]
-private void Reset()
-{
-	flop = false;
-	turn = false;
-	river = false;
-}
+    private void UpdatePotAmountRPC(long newPotAmount)
+    {
+        potAmount = newPotAmount;
+        potText.text = $"Pot: {potAmount}";
+       
+    }
+
+	public PhotonView FindLocalPlayerPhotonView()
+    {
+        GameObject[] players = GameObject.FindGameObjectsWithTag("Player");
+
+        foreach (GameObject player in players)
+        {
+            PhotonView photonView = player.GetComponent<PhotonView>();
+            if (photonView != null && photonView.Owner == PhotonNetwork.LocalPlayer)
+            {
+                return photonView;
+            }
+        }
+
+        return null; 
+    }
 	
-	
+	private void River()
+	{
+				DeckInstance.photonView.RPC("DealRiverCardRPC", RpcTarget.AllViaServer);
+
+                        photonView.RPC("rivertrue", RpcTarget.All);
+						StartCoroutine(DelayedDW());
+	}
+void Awake()
+    {
+        if (Instance != null)
+        {
+            Destroy(gameObject);
+            return;
+        }
+        Instance = this;
+        DontDestroyOnLoad(gameObject);
+    }
+	    private bool IsAnyPlayerInstantiated()
+    {
+        return GameObject.FindGameObjectsWithTag("Player").Length > 1;
+    }
+	 [PunRPC]
+    private void RestartGameRPC()
+    {if(PhotonNetwork.IsMasterClient)
+		{
+		                StartCoroutine(DeckInstance.DelayedRestart());				
+    }
+	       
+	}
+	[PunRPC]
+	private void ProgressF()
+	{Progress = false;
+	}
+	[PunRPC]
+	private void ProgressTrue()
+	{Progress = true;
+	}
+	[PunRPC]
+	public void first()
+    {
+        FirstTurn = true;
+	  }
 
 	[PunRPC]
 	public void firstfalse()
@@ -196,341 +287,131 @@ private void Reset()
     {
         river = true;
 	  }
-	   [PunRPC]
-	private void ResetAmount()
-    {
-        currentRaiseAmount = 0;
-        CurrentBet = 0;
-		photonView.RPC("UpdateCallAmountText", RpcTarget.All, CurrentBet);
-    }
-	[PunRPC]
-private void UpdateCallAmountText(long CurrentBet)
+	  public void Comm()
+	{
+	photonView.RPC("floptrue", RpcTarget.All);
+                        StartCoroutine(DelayedRPC());
+                        StartCoroutine(DelayedRPC1());
+						
+                        photonView.RPC("turntrue", RpcTarget.All);
+                        StartCoroutine(DelayedRPC2());
+						
+                        photonView.RPC("rivertrue", RpcTarget.All);	
+				
+						StartCoroutine(DelayedDW()); 
+                
+			   Debug.Log("Comm called");
+	}
+private PlayerManager FindPlayerByID(string id)
 {
-	foreach (Photon.Realtime.Player player in PhotonNetwork.PlayerList)
-{
-    if (player.TagObject is GameObject obj && obj.TryGetComponent(out PlayerManager pm))
-    {
-        pm.photonView.RPC("SyncCallAmount", player,CurrentBet );
-    }
-}
-}
-[PunRPC]
-    public void PlayerFinishedTurn()
-    {
-        playersFinished++;
-        if (playersFinished >= totalPlayers && !flop)
-        {photonView.RPC("firstfalse", RpcTarget.AllBuffered);
-            photonView.RPC("floptrue", RpcTarget.All);
-            DeckInstance.photonView.RPC("DistributeAndAddCommunityCards", RpcTarget.AllViaServer);
-            photonView.RPC("ResetTurnStatesForOthers", RpcTarget.All);
-            photonView.RPC("ResetAmount", RpcTarget.All);
-			photonView.RPC("ResetBetsAfterFlop", RpcTarget.All);
-        }
-        else if (playersFinished >= totalPlayers && flop && !turn)
-        {
-            photonView.RPC("ResetTurnStatesForOthers", RpcTarget.All);
-            DeckInstance.photonView.RPC("DealTurnCardRPC", RpcTarget.AllViaServer);
-            photonView.RPC("turntrue", RpcTarget.All);
-            photonView.RPC("ResetAmount", RpcTarget.All);
-        }
-        else if (playersFinished >= totalPlayers && flop && turn && !river)
-        {
-            photonView.RPC("ResetTurnStatesForOthers", RpcTarget.All);
-            DeckInstance.photonView.RPC("DealRiverCardRPC", RpcTarget.AllViaServer);
-			 Invoke("A", 0.5f); 
-			
-            photonView.RPC("rivertrue", RpcTarget.All);
-			
-        }
-        else if (playersFinished >= totalPlayers && flop && turn && river)
-        {  
-			Invoke("Final", 2.5f);
-			 Invoke("RestartD", 4f);
-Debug.Log("?");
-        }
-    }
-	
-	
-	public void EvaluateHand()
-{
-        foreach (PlayerManager pm in FindObjectsOfType<PlayerManager>())
-    {
-    pm.photonView.RPC("EvaluateHand", RpcTarget.All);
-    }
-
- 
-}
-private IEnumerator WaitAndDetermineWinner()
+    return allPlayers.FirstOrDefault(p => p.playerID == id);
+}	
+	private IEnumerator DelayedRPC()
 {
     yield return new WaitForSeconds(1f);
-    DetermineWinner(); // Now it's in the same script
+    DeckInstance.photonView.RPC("DistributeAndAddCommunityCards", RpcTarget.AllViaServer);
 }
-private IEnumerator ResetRound()
+private IEnumerator DelayedRPC1()
+{
+    yield return new WaitForSeconds(1.5f);
+    DeckInstance.photonView.RPC("DealTurnCardRPC", RpcTarget.AllViaServer);
+}
+private IEnumerator DelayedRPC2()
 {
     yield return new WaitForSeconds(2f);
-   
-photonView.RPC("Reset", RpcTarget.All);
-photonView.RPC("ResetTurnStatesForOthers", RpcTarget.All);
-photonView.RPC("New", RpcTarget.MasterClient);
+DeckInstance.photonView.RPC("DealRiverCardRPC", RpcTarget.AllViaServer);
 
+	
 }
-
-public void DetermineWinner()
+	
+ private IEnumerator DelayedDW()
 {
-    PlayerManager[] allPlayers = FindObjectsOfType<PlayerManager>();
-
-    PlayerManager bestPlayer = null;
-    HandRank bestRank = HandRank.HighCard;
-
-    foreach (PlayerManager pm in allPlayers)
-    {
-        Debug.Log($"Player {pm.photonView.Owner.NickName} has {pm.bestHandRank}");
-
-        if (bestPlayer == null || pm.bestHandRank > bestRank)
-        {
-            bestPlayer = pm;
-            bestRank = pm.bestHandRank;
-			pm.photonView.RPC("ResetHand", RpcTarget.All);
-        }
-    }
-
-    if (bestPlayer != null)
-    {
-        Debug.Log($"🏆 Winner: {bestPlayer.photonView.Owner.NickName} with {bestRank}");
-
-        // Award pot to winner
-        bestPlayer.photonView.RPC("ReceiveWinnings", bestPlayer.photonView.Owner, pot);
-
-        // Reset pot for next round
-        pot = 0;
-		 photonView.RPC("UpdatePotUI", RpcTarget.AllBuffered,pot);
-    }
-}
-[PunRPC]
-private void A()
-	{A2();
+yield return new WaitForSeconds(1f);
+	photonView.RPC("ResetTurnStatesForOthers", RpcTarget.AllBuffered); 
+	Invoke("Final", 2.5f);
     
 
 }
 
-private void A2()
-	{
-if (photonView.IsMine)
-    {
-        EvaluateHand(); // Local player evaluates their own hand
-    }
+   [PunRPC]
+public void StartSit()
+{
+  
+    PlayerManager[] playerManagers = FindObjectsOfType<PlayerManager>();
+    totalPlayers = playerManagers.Length;
 
-}
-	private void Final()
-	{
-	   StartCoroutine(WaitAndDetermineWinner());
-            photonView.RPC("ResetTurnStatesForOthers", RpcTarget.All);
-
-            photonView.RPC("Reset", RpcTarget.All);
-            photonView.RPC("ResetAmount", RpcTarget.All);
-            
-			photonView.RPC("lastf", RpcTarget.All);
-			StartCoroutine(ResetRound());
-			
-			Rotate();
-			}
-private void UpdatePlayerNamesInInspector()
-    {
-        playerNamesInGame.Clear();
-        foreach (var player in PlayersInGame)
-        {
-            playerNamesInGame.Add(player.NickName);
+    if (PhotonNetwork.IsMasterClient && !Progress && IsAnyPlayerInstantiated())
+    {photonView.RPC("RestartGameRPC", RpcTarget.MasterClient);
+        GameObject[] pokerPlayerObjects = GameObject.FindGameObjectsWithTag("Player");
+        if (pokerPlayerObjects.Length > 0)
+        {foreach (GameObject pokerPlayerObject in pokerPlayerObjects)
+            {PhotonView pv = pokerPlayerObject.GetComponent<PhotonView>();
+                if (pv != null)
+                {pv.RPC("IsPlaying", RpcTarget.AllBuffered, (int)Statue.Playing);
+                }
+            }
         }
+        photonView.RPC("first", RpcTarget.AllBuffered);
+        foreach (PlayerManager playerManager in playerManagers)
+        {
+            playerManager.photonView.RPC("gametrue", RpcTarget.All);
+        }
+
+        photonView.RPC("hasEvaluatedf", RpcTarget.All);
+        photonView.RPC("Resetstate", RpcTarget.All);
     }
-	private void Update()
-    {currentBetInspectorView = CurrentBet;
-        UpdatePlayerNamesInInspector();
+}
+
+
+	
+    
+	
+    void Update()
+    {
+                UpdatePlayerNamesInInspector();
 		if (Input.GetKeyDown(KeyCode.P)) // for testing
 {
     LogPlayersInGame();
 }
     }
-	[PunRPC]
-    public void RotatePlayerPositions()
-{
-    // Create a new dictionary to hold updated seat assignments
-    Dictionary<int, PokerSeat> newSeatAssignments = new Dictionary<int, PokerSeat>();
-
-    foreach (var kvp in playerSeats)
-    {
-        int actorNumber = kvp.Key;
-        PokerSeat currentSeat = kvp.Value;
-
-        // Find index of the current seat in the order
-        int currentIndex = Array.IndexOf(seatOrder, currentSeat);
-        int nextIndex = (currentIndex + 1) % seatOrder.Length;  // Wrap around
-
-        PokerSeat newSeat = seatOrder[nextIndex];
-        newSeatAssignments[actorNumber] = newSeat;
-
-        Debug.Log($"Player {actorNumber} moves from {currentSeat} to {newSeat}");
-    }
-
-    // Apply updated seat assignments
-    playerSeats = newSeatAssignments;
-
-    // Optionally update playerSeatList if you're using that as well
-    playerSeatList.Clear();
-    foreach (var kvp in playerSeats)
-    {
-        playerSeatList.Add(new PlayerSeatEntry
-        {
-            actorNumber = kvp.Key,
-            seat = kvp.Value,
-			statue = (int)Statue.Waiting
-        });
-    }
-}
-
-public void AssignPlayerSeats()
-{
-    playerSeats.Clear();
-
-    for (int i = 0; i < PlayersInGame.Count && i < seatOrder.Length; i++)
-    {
-        Player player = PlayersInGame[i];
-        PokerSeat seat = seatOrder[i];
-
-        playerSeats[player.ActorNumber] = seat;
-    }
-}
-   [PunRPC]
-    void AddPlayerToList(int actorNumber)
-    {
-        Player player = PhotonNetwork.CurrentRoom.GetPlayer(actorNumber);
-        if (player != null && !GameManager.Instance.PlayersInGame.Contains(player))
-        {
-            GameManager.Instance.PlayersInGame.Add(player);
-            Debug.Log($"Player {player.NickName} added to PlayersInGame.");
-        }
-    }
-
-    public int PlayerCount => PlayersInGame.Count;
-    void Start()
-    { ClickSpawner[] spawners = FindObjectsOfType<ClickSpawner>();
-        foreach (ClickSpawner spawner in spawners)
-        {
-            spawnersBySeat[spawner.seatNumber] = spawner;
-        }
-
-        Debug.Log("Stored " + spawnersBySeat.Count + " ClickSpawner(s) in the dictionary.");
-        if (PhotonNetwork.IsMasterClient)
-        {
-            // Master client setup (if needed)
-        }
-    }
-	public ClickSpawner GetClickSpawnerBySeat(int seatNumber)
-    {
-        if (spawnersBySeat.ContainsKey(seatNumber))
-        {
-            return spawnersBySeat[seatNumber];
-        }
-        return null;  // If not found, return null
-    }
-public override void OnPlayerEnteredRoom(Player newPlayer)
-    {
-	totalPlayers = PhotonNetwork.CurrentRoom.PlayerCount;}
-public override void OnPlayerLeftRoom(Player otherPlayer)
-{
-    Debug.Log($"Player left: {otherPlayer.NickName}");
-
-    // Count how many PlayerManager instances are still in the scene
-    PlayerManager[] activePlayers = FindObjectsOfType<PlayerManager>();
-
-    if (PhotonNetwork.IsMasterClient && activePlayers.Length == 1)
-    {
-        photonView.RPC("ProgressF", RpcTarget.All);
-    }
-}
-
-
-
-public void LogPlayersInGame()
-{
-    Debug.Log("==== Players In Game ====");
-    foreach (var p in PlayersInGame)
-    {
-        Debug.Log($"Player: {p.NickName}, ActorNumber: {p.ActorNumber}");
-    }
-}
-
-    void Awake()
-    {
-        if (Instance != null)
-        {
-            Destroy(gameObject);
-            return;
-        }
-        Instance = this;
-        DontDestroyOnLoad(gameObject);
-    }
-
-
-    [PunRPC]
-    public void StartSit()
-    {
-        if (!Progress && IsAnyPlayerInstantiated())
-        {
-photonView.RPC("RestartGameRPC", RpcTarget.MasterClient);
-            photonView.RPC("ProgressTrue", RpcTarget.AllBuffered);
-			GameObject[] pokerPlayerObjects = GameObject.FindGameObjectsWithTag("Player");
-     if (pokerPlayerObjects.Length > 0)
-    {
-        foreach (GameObject pokerPlayerObject in pokerPlayerObjects)
-        {
-            PhotonView photonView = pokerPlayerObject.GetComponent<PhotonView>();
-
-            if (photonView != null)
-            {
-				photonView.RPC("IsPlaying", RpcTarget.AllBuffered, (int)Statue.Playing);
-
-			}
-        }
-    }   }   
-	foreach (PlayerManager player in FindObjectsOfType<PlayerManager>())
-    {
-        player.CheckAndStandUpIfBroke();
-    }}
-	[PunRPC]
-	private void New()
-	{ photonView.RPC("ProgressF", RpcTarget.All);
-	if(PhotonNetwork.IsMasterClient)
-		{
-	StartSit();
-	}
-	 }
 	
-	[PunRPC]
-	private void ProgressF()
-	{Progress = false;
-	}
-	[PunRPC]
-	private void ProgressTrue()
-	{Progress = true;
-	}
-  [PunRPC]
-    private void RestartGameRPC()
-    {if(PhotonNetwork.IsMasterClient)
-		{
-		                StartCoroutine(DeckInstance.DelayedRestart());				
-    }
-	       
-	}
-    private bool IsAnyPlayerInstantiated()
+	 [PunRPC]
+    private void ResetTurnStatesForOthers()
     {
-        return GameObject.FindGameObjectsWithTag("Player").Length > 1;
+        playersFinished = 0;
     }
-	
-	
- 
-public void StartNewRound()
+	private void Turn()
+	{
+		   DeckInstance.photonView.RPC("DealTurnCardRPC", RpcTarget.AllViaServer); 
+                        photonView.RPC("turntrue", RpcTarget.All); 
+						
+	}[PunRPC]
+	public void  hasEvaluatedf()
+	{
+		 hasEvaluated = false;
+	}
+public void EvaluateHand()
 {
-    photonView.RPC("StartTurnUT", RpcTarget.MasterClient);
+ if (!PhotonNetwork.IsMasterClient || hasEvaluated)
+        return;
+
+    hasEvaluated = true;
+
+    PlayerManager[] players = FindObjectsOfType<PlayerManager>();
+    foreach (PlayerManager playerManager in players)
+    {
+
+        playerManager.photonView.RPC("EvaluateHandRPC", RpcTarget.All);   
+        playerManager.photonView.RPC("ShareHandWithMaster", RpcTarget.All);
+    }
+}
+[PunRPC]
+private void EvalForAll()
+	{
+if (photonView.IsMine)
+    {
+        EvaluateHand();
+    }
 
 }
 public void Rotate()
@@ -538,10 +419,10 @@ public void Rotate()
 GameObject[] pokerPlayerObjects = GameObject.FindGameObjectsWithTag("Player");
      if (pokerPlayerObjects.Length > 0)
     {
-        // Loop through each GameObject in the array
+
         foreach (GameObject pokerPlayerObject in pokerPlayerObjects)
         {
-            // Get the PhotonView component from the GameObject
+
             PhotonView photonView = pokerPlayerObject.GetComponent<PhotonView>();
 
             if (photonView != null)
@@ -550,5 +431,114 @@ GameObject[] pokerPlayerObjects = GameObject.FindGameObjectsWithTag("Player");
         }
     }
 }}
+[PunRPC]
+private void Reset()
+{
+	flop = false;
+	turn = false;
+	river = false;
+}
+[PunRPC]
+private void ResetTurnStatesRaise()
+{
+	playersFinished--;
+}
+private void Final()
+{
 
+
+photonView.RPC("EvalForAll", RpcTarget.AllBuffered);
+    photonView.RPC("Reset", RpcTarget.AllBuffered);
+Debug.Log("test");
+
+    StartCoroutine(ResetRound());
+    Rotate();
+}
+[PunRPC]
+	private void ResetAmount()
+    {
+        potAmount = 0;
+        
+		photonView.RPC("UpdatePotAmountRPC", RpcTarget.All, potAmount);
+    }
+
+	[PunRPC]
+public void PlayerFinishedTurn()
+{
+    Debug.Log($"[PlayerFinishedTurn] Called - playersFinished: {playersFinished}, totalPlayers: {totalPlayers}, flop: {flop}, turn: {turn}, river: {river}");
+
+    if (playersFinished < totalPlayers)
+    {
+        playersFinished = 0;
+    }
+
+    playersFinished++;
+    Debug.Log($"[PlayerFinishedTurn] Incremented - playersFinished: {playersFinished}");
+
+    if (playersFinished >= totalPlayers && !flop)
+    {
+        Debug.Log("[PlayerFinishedTurn] Transitioning to FLOP phase");
+        photonView.RPC("firstfalse", RpcTarget.AllBuffered);
+        photonView.RPC("floptrue", RpcTarget.All);
+        DeckInstance.photonView.RPC("DistributeAndAddCommunityCards", RpcTarget.AllViaServer);
+        photonView.RPC("ResetTurnStatesForOthers", RpcTarget.AllBuffered);
+    }
+    else if (playersFinished >= totalPlayers && flop && !turn)
+    {
+        Debug.Log("[PlayerFinishedTurn] Transitioning to TURN phase");
+        photonView.RPC("ResetTurnStatesForOthers", RpcTarget.AllBuffered);
+        DeckInstance.photonView.RPC("DealTurnCardRPC", RpcTarget.AllViaServer);
+        photonView.RPC("turntrue", RpcTarget.All);
+    }
+    else if (playersFinished >= totalPlayers && flop && turn && !river)
+    {
+        Debug.Log("[PlayerFinishedTurn] Transitioning to RIVER phase");
+        photonView.RPC("ResetTurnStatesForOthers", RpcTarget.AllBuffered);
+        DeckInstance.photonView.RPC("DealRiverCardRPC", RpcTarget.AllViaServer);
+        photonView.RPC("rivertrue", RpcTarget.All);
+    }
+    else if (playersFinished >= totalPlayers && flop && turn && river)
+    {
+        Debug.Log("[PlayerFinishedTurn] Final phase - Revealing cards and evaluating");
+
+        foreach (PlayerManager pm in FindObjectsOfType<PlayerManager>())
+        {
+            pm.photonView.RPC("RevealAllCards", RpcTarget.All);
+        }
+
+        photonView.RPC("EvalForAll", RpcTarget.All);
+
+        Invoke("Final", 2.5f);
+        Invoke("RestartD", 4f);
+
+        Debug.Log("END! round");
+    }
+}
+[PunRPC]
+		public void Resetstate()
+{
+   
+photonView.RPC("Reset", RpcTarget.All);
+photonView.RPC("ResetTurnStatesForOthers", RpcTarget.All);}
+	private IEnumerator ResetRound()
+{
+    yield return new WaitForSeconds(5f);
+   	    foreach (PlayerManager pm in FindObjectsOfType<PlayerManager>())
+    {
+        pm.photonView.RPC("Check", RpcTarget.AllViaServer);
+    }
+	    photonView.RPC("ResetAmount", RpcTarget.AllBuffered);
+photonView.RPC("Reset", RpcTarget.All);
+photonView.RPC("ResetTurnStatesForOthers", RpcTarget.All);
+photonView.RPC("New", RpcTarget.MasterClient);
+
+}
+[PunRPC]
+	private void New()
+	{ photonView.RPC("ProgressF", RpcTarget.All);
+	if(PhotonNetwork.IsMasterClient)
+		{
+	StartSit();
+	}
+	 }
 }

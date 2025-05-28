@@ -1,8 +1,10 @@
 using System.Collections.Generic;
 using System.Linq;
+using UnityEngine;
 
 public enum HandRank
 {
+	None,
     HighCard,
     OnePair,
     TwoPair,
@@ -14,35 +16,65 @@ public enum HandRank
     StraightFlush,
     RoyalFlush
 }
-
-public class HandValue
+public class HandEvaluator
 {
-    public HandRank Rank { get; set; }
-    public List<int> MainRanks { get; set; } = new List<int>();
-    public List<int> Kickers { get; set; } = new List<int>();
-}
-
-public static class HandEvaluator
-{
-    public static HandValue EvaluateHand(List<Card> cards)
+    public class EvaluatedHand
     {
-        var all5CardCombos = Get5CardCombinations(cards);
+        public HandRank Rank;
+        public List<Card> CardsInHand;  // The 5 cards that make up the hand
+        public List<int> RankValues;    // Values for tie-breaking (e.g., kicker cards)
 
-        HandValue bestValue = null;
+        public EvaluatedHand(HandRank rank, List<Card> cards, List<int> rankValues)
+        {
+            Rank = rank;
+            CardsInHand = cards;
+            RankValues = rankValues;
+        }
+    }
+
+    public EvaluatedHand EvaluateHand(List<Card> cards)
+    {
+        // 7 cards => evaluate best 5 card hand
+        if (cards == null || cards.Count < 5)
+        {
+            Debug.LogError("Not enough cards to evaluate a hand.");
+            return null;
+        }
+
+        // Sort cards by rank descending for easier evaluation
+        var sortedCards = cards.OrderByDescending(c => (int)c.rank).ToList();
+
+        // Get all combinations of 5 cards out of 7 to find the best hand
+        var all5CardCombos = GetCombinations(sortedCards, 5);
+
+        EvaluatedHand bestHand = null;
 
         foreach (var combo in all5CardCombos)
         {
-            var value = EvaluateFiveCardHand(combo);
-            if (bestValue == null || CompareHands(value, bestValue) > 0)
+            var evaluated = EvaluateFiveCardHand(combo);
+            if (bestHand == null || evaluated.Rank > bestHand.Rank ||
+                (evaluated.Rank == bestHand.Rank && CompareRankValues(evaluated.RankValues, bestHand.RankValues) > 0))
             {
-                bestValue = value;
+                bestHand = evaluated;
             }
         }
 
-        return bestValue;
+        return bestHand;
     }
 
-    private static HandValue EvaluateFiveCardHand(List<Card> hand)
+    // Helper: Compare two rank value lists for tie breaking (return 1 if first is better, -1 if second better, 0 equal)
+    private int CompareRankValues(List<int> a, List<int> b)
+    {
+        for (int i = 0; i < Mathf.Min(a.Count, b.Count); i++)
+        {
+            if (a[i] > b[i]) return 1;
+            if (a[i] < b[i]) return -1;
+        }
+        return 0;
+    }
+
+    // Evaluate a 5-card hand and return its HandRank and tie-break info
+    private EvaluatedHand EvaluateFiveCardHand(List<Card> hand)
     {
         var ranks = hand.Select(c => (int)c.rank).OrderByDescending(r => r).ToList();
         var suits = hand.Select(c => c.suit).ToList();
@@ -50,164 +82,121 @@ public static class HandEvaluator
         bool isFlush = suits.Distinct().Count() == 1;
         bool isStraight = IsStraight(ranks);
 
-        var grouped = hand.GroupBy(c => (int)c.rank)
-                          .OrderByDescending(g => g.Count())
-                          .ThenByDescending(g => g.Key)
-                          .ToList();
+        var groupedRanks = ranks.GroupBy(r => r)
+                                .OrderByDescending(g => g.Count())
+                                .ThenByDescending(g => g.Key)
+                                .ToList();
 
-        var result = new HandValue();
-
+        if (isFlush && isStraight && ranks[0] == (int)Rank.Ace)
+        {
+            // Royal Flush
+            return new EvaluatedHand(HandRank.RoyalFlush, hand, ranks);
+        }
         if (isFlush && isStraight)
         {
-            result.Rank = ranks.Max() == 14 && ranks.Contains(10) ? HandRank.RoyalFlush : HandRank.StraightFlush;
-            result.MainRanks.Add(ranks.Max());
-            return result;
+            // Straight Flush
+            return new EvaluatedHand(HandRank.StraightFlush, hand, ranks);
         }
-
-        if (grouped[0].Count() == 4)
+        if (groupedRanks[0].Count() == 4)
         {
-            result.Rank = HandRank.FourOfAKind;
-            result.MainRanks.Add(grouped[0].Key);
-            result.Kickers.Add(grouped[1].Key);
-            return result;
+            // Four of a Kind
+            var rankValues = new List<int> { groupedRanks[0].Key, groupedRanks[1].Key };
+            return new EvaluatedHand(HandRank.FourOfAKind, hand, rankValues);
         }
-
-        if (grouped[0].Count() == 3 && grouped[1].Count() == 2)
+        if (groupedRanks[0].Count() == 3 && groupedRanks[1].Count() == 2)
         {
-            result.Rank = HandRank.FullHouse;
-            result.MainRanks.Add(grouped[0].Key);
-            result.MainRanks.Add(grouped[1].Key);
-            return result;
+            // Full House
+            var rankValues = new List<int> { groupedRanks[0].Key, groupedRanks[1].Key };
+            return new EvaluatedHand(HandRank.FullHouse, hand, rankValues);
         }
-
         if (isFlush)
         {
-            result.Rank = HandRank.Flush;
-            result.MainRanks = ranks;
-            return result;
+            // Flush
+            return new EvaluatedHand(HandRank.Flush, hand, ranks);
         }
-
         if (isStraight)
         {
-            result.Rank = HandRank.Straight;
-            result.MainRanks.Add(GetHighCardForStraight(ranks));
-            return result;
+            // Straight
+            return new EvaluatedHand(HandRank.Straight, hand, ranks);
         }
-
-        if (grouped[0].Count() == 3)
+        if (groupedRanks[0].Count() == 3)
         {
-            result.Rank = HandRank.ThreeOfAKind;
-            result.MainRanks.Add(grouped[0].Key);
-            result.Kickers = grouped.Skip(1).Select(g => g.Key).Take(2).ToList();
-            return result;
+            // Three of a Kind
+            var rankValues = new List<int> { groupedRanks[0].Key };
+            rankValues.AddRange(groupedRanks.Skip(1).Select(g => g.Key));
+            return new EvaluatedHand(HandRank.ThreeOfAKind, hand, rankValues);
         }
-
-        if (grouped[0].Count() == 2 && grouped[1].Count() == 2)
+        if (groupedRanks[0].Count() == 2 && groupedRanks[1].Count() == 2)
         {
-            result.Rank = HandRank.TwoPair;
-            result.MainRanks.Add(grouped[0].Key);
-            result.MainRanks.Add(grouped[1].Key);
-            result.Kickers.Add(grouped[2].Key);
-            return result;
+            // Two Pair
+            var rankValues = new List<int> { groupedRanks[0].Key, groupedRanks[1].Key };
+            rankValues.Add(groupedRanks[2].Key);
+            return new EvaluatedHand(HandRank.TwoPair, hand, rankValues);
         }
-
-        if (grouped[0].Count() == 2)
+        if (groupedRanks[0].Count() == 2)
         {
-            result.Rank = HandRank.OnePair;
-            result.MainRanks.Add(grouped[0].Key);
-            result.Kickers = grouped.Skip(1).Select(g => g.Key).Take(3).ToList();
-            return result;
+            // One Pair
+            var rankValues = new List<int> { groupedRanks[0].Key };
+            rankValues.AddRange(groupedRanks.Skip(1).Select(g => g.Key));
+            return new EvaluatedHand(HandRank.OnePair, hand, rankValues);
         }
 
-        result.Rank = HandRank.HighCard;
-        result.MainRanks = ranks;
-        return result;
+        // High Card
+        return new EvaluatedHand(HandRank.HighCard, hand, ranks);
     }
 
-    private static bool IsStraight(List<int> ranks)
+    // Check if the list of ranks forms a straight (handles Ace-low straight too)
+    private bool IsStraight(List<int> ranks)
     {
-        var distinctRanks = ranks.Distinct().OrderBy(r => r).ToList();
+        // Remove duplicates
+        var distinctRanks = ranks.Distinct().OrderByDescending(r => r).ToList();
 
-        if (distinctRanks.Contains(14))
-        {
-            distinctRanks.Add(1);
-            distinctRanks = distinctRanks.Distinct().OrderBy(r => r).ToList();
-        }
+        // Check normal straight
+        if (distinctRanks.Count < 5) return false;
 
         for (int i = 0; i <= distinctRanks.Count - 5; i++)
         {
-            if (distinctRanks[i + 4] - distinctRanks[i] == 4)
+            if (distinctRanks[i] - distinctRanks[i + 4] == 4)
                 return true;
+        }
+
+        // Check Ace-low straight (A-2-3-4-5)
+        if (distinctRanks.Contains((int)Rank.Ace) &&
+            distinctRanks.Contains(2) &&
+            distinctRanks.Contains(3) &&
+            distinctRanks.Contains(4) &&
+            distinctRanks.Contains(5))
+        {
+            return true;
         }
 
         return false;
     }
 
-    private static int GetHighCardForStraight(List<int> ranks)
+    // Helper: Generate all combinations of a list taken k at a time
+    private List<List<T>> GetCombinations<T>(List<T> list, int k)
     {
-        var distinctRanks = ranks.Distinct().OrderBy(r => r).ToList();
+        var result = new List<List<T>>();
+        int[] indices = new int[k];
 
-        if (distinctRanks.Contains(14))
+        void Recurse(int depth, int start)
         {
-            distinctRanks.Add(1);
-            distinctRanks = distinctRanks.Distinct().OrderBy(r => r).ToList();
-        }
-
-        for (int i = 0; i <= distinctRanks.Count - 5; i++)
-        {
-            if (distinctRanks[i + 4] - distinctRanks[i] == 4)
-                return distinctRanks[i + 4];
-        }
-
-        return 0;
-    }
-
-    private static List<List<Card>> Get5CardCombinations(List<Card> cards)
-    {
-        var combinations = new List<List<Card>>();
-        int n = cards.Count;
-
-        for (int i = 0; i < n - 4; i++)
-        {
-            for (int j = i + 1; j < n - 3; j++)
+            if (depth == k)
             {
-                for (int k = j + 1; k < n - 2; k++)
-                {
-                    for (int l = k + 1; l < n - 1; l++)
-                    {
-                        for (int m = l + 1; m < n; m++)
-                        {
-                            combinations.Add(new List<Card> {
-                                cards[i], cards[j], cards[k], cards[l], cards[m]
-                            });
-                        }
-                    }
-                }
+                var combo = new List<T>();
+                for (int i = 0; i < k; i++) combo.Add(list[indices[i]]);
+                result.Add(combo);
+                return;
+            }
+
+            for (int i = start; i < list.Count; i++)
+            {
+                indices[depth] = i;
+                Recurse(depth + 1, i + 1);
             }
         }
 
-        return combinations;
-    }
-
-    public static int CompareHands(HandValue hv1, HandValue hv2)
-    {
-        if (hv1.Rank != hv2.Rank)
-            return hv1.Rank.CompareTo(hv2.Rank);
-
-        for (int i = 0; i < hv1.MainRanks.Count; i++)
-        {
-            if (i >= hv2.MainRanks.Count) return 1;
-            if (hv1.MainRanks[i] != hv2.MainRanks[i])
-                return hv1.MainRanks[i].CompareTo(hv2.MainRanks[i]);
-        }
-
-        for (int i = 0; i < hv1.Kickers.Count; i++)
-        {
-            if (i >= hv2.Kickers.Count) return 1;
-            if (hv1.Kickers[i] != hv2.Kickers[i])
-                return hv1.Kickers[i].CompareTo(hv2.Kickers[i]);
-        }
-
-        return 0;
+        Recurse(0, 0);
+        return result;
     }
 }

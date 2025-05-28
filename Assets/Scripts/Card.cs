@@ -54,7 +54,7 @@ public class Card : MonoBehaviourPunCallbacks, IPunObservable
         }
         else
         {
-            Debug.LogError("Sprite not found for card: " + spriteName);
+            //Debug.LogError("Sprite not found for card: " + spriteName);
         }
     }
 
@@ -105,7 +105,7 @@ public class Card : MonoBehaviourPunCallbacks, IPunObservable
                 }
                 else
                 {
-                    Debug.LogError("Sprite not found for card: " + spriteName);
+                    //Debug.LogError("Sprite not found for card: " + spriteName);
                 }
             }
         }

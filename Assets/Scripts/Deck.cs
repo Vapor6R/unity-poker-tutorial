@@ -27,7 +27,18 @@ public class Deck : MonoBehaviourPunCallbacks
         }
     }
 	
-	
+	private Card DrawCard()
+{
+    if (cards.Count == 0)
+    {
+        //Debug.LogWarning("Deck is empty!");
+        return null;
+    }
+
+    Card topCard = cards[0];      // Take the first card in the deck
+    cards.RemoveAt(0);            // Remove it from the list
+    return topCard;               // Return it to be used
+}
 [PunRPC]
     private void DealTurnCardRPC()
     {
@@ -44,7 +55,7 @@ public class Deck : MonoBehaviourPunCallbacks
         }
         else
         {
-            //Debug.LogError("Failed to draw a card for the turn.");
+            ////Debug.LogError("Failed to draw a card for the turn.");
         }
     }
 	[PunRPC]
@@ -64,10 +75,15 @@ public class Deck : MonoBehaviourPunCallbacks
         }
         else
         {
-            //Debug.LogError("Failed to draw a card for the river.");
+            ////Debug.LogError("Failed to draw a card for the river.");
         }
+		StartCoroutine(DelayedEval());
     }
-
+private IEnumerator DelayedEval()
+{
+    yield return new WaitForSeconds(1f);
+  
+}
 [PunRPC]
 private void DealCommunityCardsRPC()
 {
@@ -121,7 +137,7 @@ private void ClearCommunityCards()
         GameObject.Destroy(child.gameObject);
     }
 
-    //Debug.Log("Community cards cleared.");
+    ////Debug.Log("Community cards cleared.");
 }
 [PunRPC]
 public void ClearCards()
@@ -140,7 +156,7 @@ public void ClearCards()
 photonView.RPC("ClearPlayerHands", RpcTarget.All);
 if(PhotonNetwork.IsMasterClient){
 	
-StartCoroutine(IniAfterDelay());
+StartCoroutine(IniAfterDelay());  
 }
 
 }
@@ -174,7 +190,7 @@ photonView.RPC("ClearCommunityCards", RpcTarget.MasterClient);
                 {
                     photonView.RPC("InitializeCard", RpcTarget.AllBuffered, cardComponent.photonView.ViewID, (int)rank, (int)suit);
                     cards.Add(cardComponent);  // Add the created card to the deck
-                    //Debug.Log($"Created card: {rank} of {suit}");
+                    ////Debug.Log($"Created card: {rank} of {suit}");
                 }
             }
         }
@@ -182,15 +198,20 @@ photonView.RPC("ClearCommunityCards", RpcTarget.MasterClient);
 
    public IEnumerator DelayedDistributeCards()
     {
-        yield return new WaitForSeconds(0f); // Adjust the delay time as needed
-        photonView.RPC("DistributeCardsRPC", RpcTarget.MasterClient);
+        yield return new WaitForSeconds(0.1f); 
+		PlayerManager[] players = FindObjectsOfType<PlayerManager>();
+if (players.Length >= 2)
+{
+     photonView.RPC("DistributeCardsRPC", RpcTarget.MasterClient);
+
+      
 		
-    }
+    }    }
 	
 	[PunRPC]
     private void DistributeAndAddCommunityCards()
     {
-        //Debug.Log("Distributing community cards...");
+        ////Debug.Log("Distributing community cards...");
         for (int i = 0; i < communityCardsCount; i++)
         {
             Card drawnCard = DrawCard();
@@ -202,14 +223,14 @@ photonView.RPC("ClearCommunityCards", RpcTarget.MasterClient);
                 PhotonView cardView = drawnCard.GetComponent<PhotonView>();
                 if (cardView != null)
                 {
-                    //Debug.Log($"Community card");
+                    ////Debug.Log($"Community card");
 					photonView.RPC("AddCommunityCardRPC", RpcTarget.AllBuffered, cardView.ViewID, i);
            
 				}
             }
             else
             {
-                //Debug.LogError("Failed to draw a card for community cards.");
+                ////Debug.LogError("Failed to draw a card for community cards.");
             }
         }
 	
@@ -228,7 +249,7 @@ photonView.RPC("ClearCommunityCards", RpcTarget.MasterClient);
     private void ShuffleDeckRPC()
     {
         ShuffleDeck();
-        //Debug.Log("Deck shuffled on all clients.");
+        ////Debug.Log("Deck shuffled on all clients.");
     }
    private IEnumerator ShuffleDeckAfterDelay()
     {
@@ -258,53 +279,54 @@ photonView.RPC("InitializeDeck", RpcTarget.MasterClient);
             }
         }
     }
-	[PunRPC]
+[PunRPC]
 private void AddCommunityCardRPC(int cardViewID, int positionIndex)
 {
     PhotonView cardView = PhotonView.Find(cardViewID);
-    if (cardView != null)
-    {
-        Card card = cardView.GetComponent<Card>();
-        if (card != null && communityCardsParent != null)
-        {
-            //Debug.Log($"Adding community card {card.rank} of {card.suit} to position {positionIndex}");
-            card.transform.SetParent(communityCardsParent, false); // False to keep the local position
+    if (cardView == null) return;
 
-            float spacing = -3f; // Adjust the spacing value as needed
-            Vector3 cardPosition = new Vector3(positionIndex * spacing, 0, 0);
-            
-            // Set the local position of the card
-            card.transform.localPosition = cardPosition;
-            
-            // Rotate the card by 180 degrees around the Z-axis
-            card.transform.localRotation = Quaternion.Euler(0, 0, 180);
+    Card card = cardView.GetComponent<Card>();
+    if (card == null || communityCardsParent == null) return;
 
-            //Debug.Log($"Community card {card.rank} of {card.suit} added at position {positionIndex}.");
-        }
-        else
-        {
-            //Debug.LogError("Community card or parent is null.");
-        }
-    }
-    else
-    {
-        //Debug.LogError("CardView not found.");
-    }
+    // Place the card visually
+    card.transform.SetParent(communityCardsParent, false);
+    float spacing = +1f;
+    card.transform.localPosition = new Vector3(positionIndex * spacing, 0, 0);
+    card.transform.localRotation = Quaternion.Euler(0, 0, 0);
+
+    // ✅ Make sure this is run only by MasterClient
+    PhotonView localPlayerView = FindLocalPlayerPhotonView();
+if (localPlayerView != null)
+{
+    localPlayerView.RPC("AddCommunityCardToHand", RpcTarget.AllBuffered, cardViewID);
 }
-
-	public Card DrawCard()
+}
+public PhotonView FindLocalPlayerPhotonView()
     {
-        if (cards == null || cards.Count == 0)
+        GameObject[] players = GameObject.FindGameObjectsWithTag("Player");
+
+        foreach (GameObject player in players)
         {
-            //Debug.LogWarning("No cards left to draw or deck not initialized.");
-            return null;
+            PhotonView photonView = player.GetComponent<PhotonView>();
+            if (photonView != null && photonView.Owner == PhotonNetwork.LocalPlayer)
+            {
+                return photonView;
+            }
         }
 
-        Card drawnCard = cards[0];
-        cards.RemoveAt(0);
-        //Debug.Log($"Card drawn: {drawnCard}");
-        return drawnCard;
+        return null; // Return null if not found (handle this case in your logic)
     }
+private PhotonView GetPlayerManagerPhotonView(Player player)
+{
+    foreach (var obj in FindObjectsOfType<PlayerManager>())
+    {
+        if (obj.photonView.Owner == player)
+        {
+            return obj.photonView;
+        }
+    }
+    return null;
+}
 [PunRPC]
     private void DistributeCardsRPC()
     {
@@ -320,7 +342,7 @@ private void AddCommunityCardRPC(int cardViewID, int positionIndex)
                     {
                         Card drawnCard = DrawCard();
                         if (drawnCard != null)
-                        {GameManager.Instance.photonView.RPC("ProgressTrue", RpcTarget.AllBuffered);
+                        {
                             playerHandler.photonView.RPC("AddCardToPlayerHandRPC", RpcTarget.AllBuffered, drawnCard.photonView.ViewID);
 							
                         }
