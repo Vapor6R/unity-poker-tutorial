@@ -22,9 +22,67 @@ public enum Statue
         Folded = 4,
         AllIn = 5,
     }
-	
+	[System.Serializable]
+public class Pot
+{
+    public long Amount;
+    public List<string> EligiblePlayers = new();
+    public Dictionary<string, long> Contributions = new();
+
+	public object[] Serialize()
+    {
+        string[] players = EligiblePlayers.ToArray();
+
+        string[] contribPlayers = Contributions.Keys.ToArray();
+        long[] contribAmounts = Contributions.Values.ToArray();
+
+        return new object[]
+        {
+            Amount,
+            players,
+            contribPlayers,
+            contribAmounts
+        };
+    }
+
+    // Deserialize object array back to Pot instance
+    public static Pot Deserialize(object[] data)
+    {
+        Pot pot = new Pot();
+        pot.Amount = (long)data[0];
+        pot.EligiblePlayers = new List<string>((string[])data[1]);
+
+        string[] contribPlayers = (string[])data[2];
+        long[] contribAmounts = (long[])data[3];
+        pot.Contributions = new Dictionary<string, long>();
+
+        for (int i = 0; i < contribPlayers.Length; i++)
+        {
+            pot.Contributions[contribPlayers[i]] = contribAmounts[i];
+        }
+
+        return pot;
+    }
+}
+[System.Serializable]
+public class PlayerResultEntry
+{
+    public string playerName;
+    public HandRank rank;
+    public List<int> rankValues;
+}
 public class GameManager : MonoBehaviourPunCallbacks
-{   
+{
+private bool winnerDetermined = false;
+	public Transform potDisplayPanel; // Assign in Inspector
+public TMP_Text potEntryTemplate;
+private const byte EVENT_CODE_SYNC_POTS = 200;
+public Dictionary<string, long> playerContributions = new();
+public List<PlayerResultEntry> playerResultsList = new List<PlayerResultEntry>();
+public Dictionary<string, (HandRank rank, List<int> rankValues)> playerResults = new();
+public List<PlayerManager> players = new List<PlayerManager>();
+public List<Pot> pots = new List<Pot>();
+  private Dictionary<string, long> playerBets = new();
 private List<HandResult> results = new List<HandResult>();
  public List<Player> PlayersInGame = new List<Player>();
 [SerializeField] private List<string> playerNamesInGame = new List<string>();
@@ -49,12 +107,211 @@ public static GameManager Instance { get; private set; }
     public bool river = false;
 	public bool FirstTurn = true;
 	public long callAmount = 0;
-	private Dictionary<string, (HandRank rank, List<int> rankValues)> playerResults =
-    new Dictionary<string, (HandRank, List<int>)>();
+
 public long CallAmount 
 { 
     get => callAmount; 
     set => callAmount = value; 
+}
+public void SyncPots()
+{
+    List<object> serializedPots = new List<object>();
+
+    foreach (Pot pot in pots)
+    {
+        serializedPots.Add(pot.Serialize());
+    }
+
+    // Send as a RaiseEvent or Photon Custom Room Property
+    PhotonNetwork.RaiseEvent(
+        EVENT_CODE_SYNC_POTS,
+        serializedPots.ToArray(),
+        new RaiseEventOptions { Receivers = ReceiverGroup.All },
+        new SendOptions { Reliability = true }
+    );
+}
+public void AddPlayerContribution(string playerName, long amount)
+{
+    if (!playerContributions.ContainsKey(playerName))
+        playerContributions[playerName] = 0;
+
+    playerContributions[playerName] += amount;
+}
+public void UpdatePotDisplayUI()
+{
+    // Remove all children except the template
+    foreach (Transform child in potDisplayPanel)
+    {
+        if (child != potEntryTemplate.transform)
+            Destroy(child.gameObject);
+    }
+
+    for (int i = 0; i < pots.Count; i++)
+    {
+        Pot pot = pots[i];
+        TMP_Text entry = Instantiate(potEntryTemplate, potDisplayPanel);
+        entry.gameObject.SetActive(true);
+
+        string eligible = string.Join(", ", pot.EligiblePlayers);
+        entry.text = (pots.Count == 1)
+            ? $"Main Pot: ${pot.Amount:N0}"
+            : $"Side Pot {i + 1}: ${pot.Amount:N0} (Eligible: {eligible})";
+    }
+}
+public void AddChipsToPot(string playerName, long amount)
+{
+    photonView.RPC("RPC_AddChipsToPot", RpcTarget.MasterClient, playerName, amount);
+}
+[PunRPC]
+public void RPC_AddChipsToPot(string playerName, long amount)
+{
+    if (!PhotonNetwork.IsMasterClient) return;
+
+    Debug.Log($"[Master] AddChipsToPot: player={playerName}, amount={amount}");
+
+    if (!playerContributions.ContainsKey(playerName))
+        playerContributions[playerName] = 0;
+
+    playerContributions[playerName] += amount;
+    potAmount += amount;
+
+    photonView.RPC("UpdatePotUI", RpcTarget.AllBuffered, potAmount);
+	Debug.Log($"[RPC_AddChipsToPot] player: {playerName}, amount: {amount}, new pot: {potAmount}");
+ 
+}
+public List<Pot> CreateSidePotsFromContributions()
+{
+    List<Pot> createdPots = new();
+
+    var contributions = playerContributions.OrderBy(kvp => kvp.Value).ToList();
+    long lastAmount = 0;
+    List<string> remainingPlayers = contributions.Select(c => c.Key).ToList();
+
+    foreach (var (playerName, contribution) in contributions)
+    {
+        long diff = contribution - lastAmount;
+        if (diff > 0)
+        {
+            Pot pot = new Pot
+            {
+                Amount = diff * remainingPlayers.Count,
+                EligiblePlayers = new List<string>(remainingPlayers)
+            };
+
+            foreach (string p in remainingPlayers)
+            {
+                pot.Contributions[p] = diff;
+            }
+
+            createdPots.Add(pot);
+            lastAmount = contribution;
+        }
+
+        remainingPlayers.Remove(playerName);
+    }
+
+    return createdPots;
+}
+
+
+
+ public void SyncDictToList()
+    {
+
+        foreach(var kvp in playerResults)
+        {
+            playerResultsList.Add(new PlayerResultEntry()
+            {
+                playerName = kvp.Key,
+                rank = kvp.Value.rank,
+                rankValues = kvp.Value.rankValues
+            });
+        }
+    }
+private List<Pot> CreateSidePots()
+{
+    var pots = new List<Pot>();
+
+    var contributions = playerBets
+        .OrderBy(entry => entry.Value)
+        .ToList();
+
+    long previous = 0;
+
+    while (contributions.Count > 0)
+    {
+        long current = contributions[0].Value;
+        long betLevel = current - previous;
+
+        var eligible = contributions.Select(entry => entry.Key).ToList();
+        long potAmount = betLevel * eligible.Count;
+
+        pots.Add(new Pot
+        {
+            Amount = potAmount,
+            EligiblePlayers = new List<string>(eligible)
+        });
+
+        previous = current;
+        contributions.RemoveAll(entry => entry.Value == current);
+    }
+
+    // Return excess chips
+    var totalPerPlayer = new Dictionary<string, long>();
+    foreach (var pot in pots)
+    {
+        foreach (string player in pot.EligiblePlayers)
+        {
+            if (!totalPerPlayer.ContainsKey(player))
+                totalPerPlayer[player] = 0;
+
+            totalPerPlayer[player] += pot.Amount / pot.EligiblePlayers.Count;
+        }
+    }
+
+    foreach (var entry in playerBets)
+    {
+        long excess = entry.Value - totalPerPlayer.GetValueOrDefault(entry.Key, 0);
+        if (excess > 0)
+        {
+            Debug.Log($"💸 Returning excess {excess} to {entry.Key}");
+            AwardChips(entry.Key, excess);
+        }
+    }
+
+    return pots;
+}
+private int GetExpectedPlayerCount()
+{
+return FindObjectsOfType<PlayerManager>().Length;
+}
+private PlayerManager FindPlayerManagerByPhotonPlayer(Player photonPlayer)
+{
+    foreach (var pm in FindObjectsOfType<PlayerManager>())
+    {
+        if (pm.photonView.Owner == photonPlayer)
+            return pm;
+    }
+    return null;
+}
+
+
+
+private PlayerManager GetPlayerByName(string playerName)
+{
+    foreach (var playerObj in FindObjectsOfType<PlayerManager>())
+    {
+        if (playerObj.photonView != null && playerObj.photonView.Owner != null)
+        {
+            if (playerObj.photonView.Owner.NickName == playerName)
+            {
+                return playerObj;
+            }
+        }
+    }
+
+    Debug.LogWarning($"Player with name {playerName} not found.");
+    return null;
 }
     void Start()
     {
@@ -118,60 +375,107 @@ public bool IsPositionAvailable(PlayerPosition position)
     {
         return !AssignedPositions.Contains(position);
     }
-public void ReceivePlayerResult(string playerName, HandRank rank, List<int> rankValues)
+public void ReceivePlayerResult(string playerName, HandRank handRank, List<int> rankValues)
 {
-    playerResults[playerName] = (rank, rankValues);
-    handResultsReceived++;
-
-    Debug.Log($"Got result from {playerName}: {rank} ({string.Join(", ", rankValues)})");
-
-    if (handResultsReceived >= totalPlayers)
+    if (winnerDetermined)
     {
-        DetermineWinner();
+        Debug.LogWarning($"[Ignored] Result from {playerName} received after winner was determined.");
+        return;
+    }
 
-		playerResults.Clear();
-        handResultsReceived = 0;
+    // Avoid duplicate results
+    if (playerResults.ContainsKey(playerName))
+    {
+        Debug.LogWarning($"[Duplicate] Result from {playerName} already received, ignoring.");
+        return;
+    }
+
+    // Store the result
+    playerResults[playerName] = (handRank, rankValues);
+
+    // ✅ Log the result
+    Debug.Log($"[HAND RECEIVED] {playerName}: Rank = {handRank}, RankValues = {string.Join(",", rankValues)}");
+
+    int received = playerResults.Count;
+    int expected = GetExpectedPlayerCount();
+    Debug.Log($"[Progress] Hand results: {received}/{expected}");
+
+    // ✅ All results are in, determine winner
+    if (received == expected)
+    {
+        Debug.Log("[ALL HANDS RECEIVED] Calling DetermineWinner...");
+        SyncDictToList();
+        DetermineWinner();
+        winnerDetermined = true;
     }
 }
-   private void DetermineWinner()
+private void DetermineWinner()
 {
-    var winner = playerResults
+	Debug.Log($"Player Contributions count: {playerContributions.Count}");
+foreach (var kvp in playerContributions)
+{
+    Debug.Log($"Player: {kvp.Key}, Contribution: {kvp.Value}");
+}
+    pots = CreateSidePotsFromContributions();
+	Debug.Log($"Total pots created: {pots.Count}");
+foreach(var pot in pots)
+{
+    Debug.Log($"Pot Amount: {pot.Amount}, Eligible Players: {string.Join(", ", pot.EligiblePlayers)}");
+}
+SyncPots();
+UpdatePotDisplayUI(); 
+    var sortedResults = playerResults
         .OrderByDescending(entry => entry.Value.rank)
         .ThenByDescending(entry => entry.Value.rankValues, new LexicographicComparer())
-        .First();
+        .ToList();
 
-    string winnerName = winner.Key;
-    var (rank, rankValues) = winner.Value;
+    Debug.Log("DetermineWinner called.");
+    Debug.Log($"Total pots: {pots.Count}");
+    Debug.Log("Player results:");
+    foreach (var pr in playerResults)
+        Debug.Log($"{pr.Key}: Rank={pr.Value.rank}, Kickers={string.Join(",", pr.Value.rankValues)}");
 
-    Debug.Log($"🏆 Winner: {winnerName} | Rank: {rank} | Kickers: {string.Join(", ", rankValues)}");
-	    AwardPotToWinner(winner.Key);
-    playerResults.Clear();
+    HashSet<string> awardedPlayers = new();
+
+foreach (var pot in pots)
+{
+    Debug.Log($"Pot: {pot.Amount}, Eligible: {string.Join(", ", pot.EligiblePlayers)}");
+
+    foreach (var result in sortedResults)
+    {
+        if (pot.EligiblePlayers.Contains(result.Key) && !awardedPlayers.Contains(result.Key))
+        {
+            AwardChips(result.Key, pot.Amount);
+            awardedPlayers.Add(result.Key);
+            break;
+        }
+    }
 }
 
-    private void AwardPotToWinner(string winnerName)
+    playerResults.Clear();
+}
+void AwardChips(string playerName, long amount)
+{
+    Debug.Log($"AwardChips called for {playerName} with amount {amount}");
+
+    var player = GetPlayerByName(playerName);
+    if (player == null)
     {
-        
-        PlayerManager winnerPM = FindObjectsOfType<PlayerManager>()
-            .FirstOrDefault(pm => pm.photonView.Owner.NickName == winnerName);
-
-        if (winnerPM != null)
-        {
-            winnerPM.AddChips(potAmount);
-
-            Debug.Log($"{winnerName} awarded {potAmount} chips!");
-            potAmount = 0;
-        }
-        else
-        {
-            Debug.LogError("Winner player not found to award pot.");
-        }
-
+        Debug.LogError($"Player {playerName} not found.");
+        return;
     }
+
+    player.chipCount += amount;
+    Debug.Log($"Player {playerName} now has {player.chipCount} chips");
+
+    player.photonView.RPC("UpdateChipCount", RpcTarget.AllBuffered, player.chipCount);
+}
 [PunRPC]
     public void AddToPot(long amount)
     {
         potAmount += amount;
         UpdatePotUI(potAmount);
+AddChipsToPot(photonView.Owner.NickName, amount);
     }
 [PunRPC]
     public void UpdatePotUI(long x)
@@ -233,13 +537,16 @@ StartCoroutine(DelayedDW()); }
 	}
 void Awake()
     {
-        if (Instance != null)
+if (Instance != null && Instance != this)
         {
+            Debug.LogWarning("Duplicate GameManager found, destroying it: " + gameObject.name);
             Destroy(gameObject);
             return;
         }
+
         Instance = this;
-        DontDestroyOnLoad(gameObject);
+        DontDestroyOnLoad(gameObject); // Optional: use only if you load scenes and want to keep GameManager
+        Debug.Log("GameManager initialized: " + gameObject.name);
     }
 	    private bool IsAnyPlayerInstantiated()
     {
@@ -336,7 +643,15 @@ yield return new WaitForSeconds(1f);
    [PunRPC]
 public void StartSit()
 {
-  
+  winnerDetermined = false;
+    playerResults.Clear();
+pots.Clear(); // Remove all existing pots
+
+    // If you have any other pot-related state, reset here
+    // For example, clear player contributions if needed:
+    playerContributions.Clear();
+
+    Debug.Log("Pots and player contributions reset for new hand.");
     PlayerManager[] playerManagers = FindObjectsOfType<PlayerManager>();
     totalPlayers = playerManagers.Length;
 

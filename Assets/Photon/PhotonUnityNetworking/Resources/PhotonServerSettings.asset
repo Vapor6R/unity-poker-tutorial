@@ -112,6 +112,8 @@ MonoBehaviour:
   - gametrue
   - hasEvaluatedf
   - Resetstate
+  - AddContribution
+  - RPC_AddChipsToPot
   DisableAutoOpenWizard: 1
   ShowSettings: 0
   DevRegionSetOnce: 1

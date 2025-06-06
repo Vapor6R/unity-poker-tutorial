@@ -24,17 +24,19 @@ public class HandResult
     public List<int> RankValues;
 }
 public class PlayerManager : MonoBehaviourPunCallbacks, IOnEventCallback
-{ private static bool blindsPosted = false;
-private bool dealerAssigned = false;
+{
+private const byte EVENT_CODE_SYNC_POTS = 200;
+public static bool blindsPosted = false;
+public bool dealerAssigned = false;
 public static Dictionary<int, PlayerPosition> playerPositions = new Dictionary<int, PlayerPosition>();
-private bool positionReceived = false;
+public bool positionReceived = false;
 public HandRank bestHandRank;
 public string playerID; 
 public long bet=0;
 public long callAmount=0;
 	public long PlayersBet = 0;
 public bool InGame = false;
-private ClickSpawner clickSpawner;
+public ClickSpawner clickSpawner;
     public Transform cardHandPosition;
 public Statue statue;
  public long chipCount;
@@ -59,6 +61,7 @@ public PlayerPosition playerPosition = PlayerPosition.None;
         PhotonNetwork.RemoveCallbackTarget(this); 
     }
 }
+
 int CountPlayersInGame()
 {
     int count = 0;
@@ -119,6 +122,14 @@ photonView.RPC("SendHandResultToMaster", RpcTarget.MasterClient,
     }
 	bestHand = null;
   bestHandRank = HandRank.None;
+}
+public int GetExpectedPlayerCount()
+{
+    // Basic version: all connected players
+    return PhotonNetwork.PlayerList.Length;
+
+    // Or, better: return only players who didn't fold, if you track that
+    // return activePlayersInHand.Count;
 }
 [PunRPC]
 public void ShareHandWithMaster()
@@ -271,9 +282,11 @@ if (callAmount >= chipCount)
    
     chipCount -= callAmount;
     PlayersBet += callAmount;
+	GameManager.Instance.AddChipsToPot(photonView.Owner.NickName, callAmount);
     photonView.RPC("UpdateChipCount", RpcTarget.AllBuffered, chipCount);
-    UpdatePot(callAmount);
-
+	Debug.Log($"[Call] {photonView.Owner.NickName} calling {callAmount}, chipCount: {chipCount}");
+    //UpdatePot(callAmount);
+  //GameManager.Instance.AddPlayerContribution(photonView.Owner.NickName, callAmount);
     bool isAllIn = chipCount <= 0;
 
 
@@ -282,7 +295,7 @@ if (callAmount >= chipCount)
         InGame = false;
 
     
-    GameManager.Instance.potAmount += callAmount;
+    //GameManager.Instance.potAmount += callAmount;
     GameManager.Instance.photonView.RPC("UpdatePotUI", RpcTarget.AllBuffered, GameManager.Instance.potAmount);
     photonView.RPC("CallAmountReset", RpcTarget.AllBuffered);
 
@@ -421,7 +434,8 @@ public void OnEvent(EventData photonEvent)
 
             if (PhotonNetwork.IsMasterClient)
             {
-                UpdatePot(raiseAmount);
+                //UpdatePot(raiseAmount);
+				
             }
 
             foreach (var player in FindObjectsOfType<PlayerManager>())
@@ -452,13 +466,17 @@ public void OnEvent(EventData photonEvent)
                     if (dealerView != null && dealerView.TryGetComponent(out PlayerManager dealer))
                     {
                         dealer.PostBlind(bigBlind); // Dealer = small blind on first round
-                        GameManager.Instance.photonView.RPC("AddToPot", RpcTarget.AllBuffered, bigBlind);
+                        
+						GameManager.Instance.AddChipsToPot(dealer.photonView.Owner.NickName, bigBlind);
+						//GameManager.Instance.AddPlayerContribution(photonView.Owner.NickName, bigBlind);
                     }
 
                     if (utgView != null && utgView.TryGetComponent(out PlayerManager utg))
                     {
                         utg.PostBlind(bigBlind); // UTG = big blind on first round
-                        GameManager.Instance.photonView.RPC("AddToPot", RpcTarget.AllBuffered, bigBlind);
+                    
+						GameManager.Instance.AddChipsToPot(utg.photonView.Owner.NickName, bigBlind);
+						//	GameManager.Instance.AddPlayerContribution(photonView.Owner.NickName, bigBlind);
                     }
                 }
                 else
@@ -466,13 +484,17 @@ public void OnEvent(EventData photonEvent)
                     if (dealerView != null && dealerView.TryGetComponent(out PlayerManager dealer))
                     {
                         dealer.PostBlind(smallBlind);
-                        GameManager.Instance.photonView.RPC("AddToPot", RpcTarget.AllBuffered, smallBlind);
+                        
+						GameManager.Instance.AddChipsToPot(dealer.photonView.Owner.NickName, smallBlind);
+							//GameManager.Instance.AddPlayerContribution(photonView.Owner.NickName, smallBlind);
                     }
 
                     if (utgView != null && utgView.TryGetComponent(out PlayerManager utg))
                     {
                         utg.PostBlind(bigBlind);
-                        GameManager.Instance.photonView.RPC("AddToPot", RpcTarget.AllBuffered, bigBlind);
+                       
+						GameManager.Instance.AddChipsToPot(utg.photonView.Owner.NickName, bigBlind);
+						//GameManager.Instance.AddPlayerContribution(photonView.Owner.NickName, bigBlind);
                     }
                 }
             }
@@ -483,6 +505,20 @@ public void OnEvent(EventData photonEvent)
         default:
             Debug.LogWarning($"Unhandled event code: {photonEvent.Code}");
             break;
+    }
+	 if (photonEvent.Code == EVENT_CODE_SYNC_POTS)
+    {
+        object[] serializedPots = (object[])photonEvent.CustomData;
+        GameManager.Instance.pots.Clear();
+
+        foreach (object potDataObj in serializedPots)
+        {
+            object[] potData = (object[])potDataObj;
+            Pot pot = Pot.Deserialize(potData);
+            GameManager.Instance.pots.Add(pot);
+        }
+
+        Debug.Log($"Received {GameManager.Instance.pots.Count} pots synced from master.");
     }
 }
 
@@ -584,8 +620,9 @@ public void OnRaiseButtonClicked()
 
    
     chipCount -= PlayersBet;
-  
-    
+	Debug.Log($"Adding {PlayersBet} chips to pot for player {photonView.Owner.NickName}");
+  GameManager.Instance.AddChipsToPot(photonView.Owner.NickName, PlayersBet);
+    //GameManager.Instance.AddPlayerContribution(photonView.Owner.NickName, PlayersBet);
     object[] content = new object[]
     {
         PhotonNetwork.LocalPlayer.ActorNumber,

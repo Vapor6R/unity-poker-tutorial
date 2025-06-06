@@ -124,12 +124,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e870accbf6e40964d992a9138d312388, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  dealerAssigned: 0
+  positionReceived: 0
   bestHandRank: 0
   playerID: 
   bet: 0
   callAmount: 0
   PlayersBet: 0
   InGame: 0
+  clickSpawner: {fileID: 0}
   cardHandPosition: {fileID: 8420575923562765056}
   statue: 0
   chipCount: 1000
