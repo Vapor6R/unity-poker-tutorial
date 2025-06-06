@@ -120,6 +120,7 @@ photonView.RPC("SendHandResultToMaster", RpcTarget.MasterClient,
     {
         Debug.LogError($"[{photonView.Owner.NickName}] Hand evaluation failed.");
     }
+	ClearHand();
 	bestHand = null;
   bestHandRank = HandRank.None;
 }
@@ -250,7 +251,10 @@ private void TransformCardPositions()
                 if (card != null)
                 {
                     if (!playerHand.Contains(card))
-                    {
+                    {if (playerHand.Count > 0)
+{
+    return;
+}
                         playerHand.Add(card);
                         
                     }

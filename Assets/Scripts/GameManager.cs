@@ -231,11 +231,7 @@ public List<Pot> CreateSidePotsFromContributions()
 private List<Pot> CreateSidePots()
 {
     var pots = new List<Pot>();
-
-    var contributions = playerBets
-        .OrderBy(entry => entry.Value)
-        .ToList();
-
+    var contributions = playerBets.OrderBy(entry => entry.Value).ToList();
     long previous = 0;
 
     while (contributions.Count > 0)
@@ -246,32 +242,46 @@ private List<Pot> CreateSidePots()
         var eligible = contributions.Select(entry => entry.Key).ToList();
         long potAmount = betLevel * eligible.Count;
 
-        pots.Add(new Pot
+        var pot = new Pot
         {
             Amount = potAmount,
             EligiblePlayers = new List<string>(eligible)
-        });
+        };
+
+        foreach (string player in eligible)
+        {
+            if (!pot.Contributions.ContainsKey(player))
+                pot.Contributions[player] = 0;
+
+            pot.Contributions[player] += betLevel;
+        }
+
+        pots.Add(pot);
 
         previous = current;
         contributions.RemoveAll(entry => entry.Value == current);
     }
 
-    // Return excess chips
-    var totalPerPlayer = new Dictionary<string, long>();
+    // 🧮 Calculate total used per player
+    Dictionary<string, long> totalUsed = new();
     foreach (var pot in pots)
     {
-        foreach (string player in pot.EligiblePlayers)
+        foreach (var kvp in pot.Contributions)
         {
-            if (!totalPerPlayer.ContainsKey(player))
-                totalPerPlayer[player] = 0;
+            if (!totalUsed.ContainsKey(kvp.Key))
+                totalUsed[kvp.Key] = 0;
 
-            totalPerPlayer[player] += pot.Amount / pot.EligiblePlayers.Count;
+            totalUsed[kvp.Key] += kvp.Value;
         }
     }
 
+    // 💸 Return excess
     foreach (var entry in playerBets)
     {
-        long excess = entry.Value - totalPerPlayer.GetValueOrDefault(entry.Key, 0);
+        long contributed = entry.Value;
+        long used = totalUsed.GetValueOrDefault(entry.Key, 0);
+        long excess = contributed - used;
+
         if (excess > 0)
         {
             Debug.Log($"💸 Returning excess {excess} to {entry.Key}");
@@ -280,7 +290,10 @@ private List<Pot> CreateSidePots()
     }
 
     return pots;
+	totalUsed.Clear();
+
 }
+
 private int GetExpectedPlayerCount()
 {
 return FindObjectsOfType<PlayerManager>().Length;
@@ -439,20 +452,36 @@ UpdatePotDisplayUI();
 
 foreach (var pot in pots)
 {
-    Debug.Log($"Pot: {pot.Amount}, Eligible: {string.Join(", ", pot.EligiblePlayers)}");
+    Debug.Log($"🪙 Pot: {pot.Amount}, Eligible: {string.Join(", ", pot.EligiblePlayers)}");
 
-    foreach (var result in sortedResults)
+    var tiedWinners = sortedResults
+        .Where(r => pot.EligiblePlayers.Contains(r.Key))
+        .GroupBy(r => (r.Value.rank, r.Value.rankValues), new HandRankEqualityComparer())
+        .OrderByDescending(g => g.Key.rank)
+        .ThenByDescending(g => g.Key.rankValues, new LexicographicComparer())
+        .FirstOrDefault()
+        ?.ToList();
+
+    if (tiedWinners == null || tiedWinners.Count == 0)
     {
-        if (pot.EligiblePlayers.Contains(result.Key) && !awardedPlayers.Contains(result.Key))
-        {
-            AwardChips(result.Key, pot.Amount);
-            awardedPlayers.Add(result.Key);
-            break;
-        }
+        Debug.LogWarning("⚠️ No eligible winners found for pot.");
+        continue;
+    }
+
+    long splitAmount = pot.Amount / tiedWinners.Count;
+    long remainder = pot.Amount % tiedWinners.Count;
+
+    Debug.Log($"🏆 Tie between: {string.Join(", ", tiedWinners.Select(t => t.Key))}, each gets {splitAmount}, remainder: {remainder}");
+
+    for (int i = 0; i < tiedWinners.Count; i++)
+    {
+        long award = splitAmount + (i == 0 ? remainder : 0); // first gets remainder
+        AwardChips(tiedWinners[i].Key, award);
     }
 }
 
-    playerResults.Clear();
+playerResults.Clear();
+playerResultsList.Clear();
 }
 void AwardChips(string playerName, long amount)
 {
@@ -644,7 +673,7 @@ yield return new WaitForSeconds(1f);
 public void StartSit()
 {
   winnerDetermined = false;
-    playerResults.Clear();
+
 pots.Clear(); // Remove all existing pots
 
     // If you have any other pot-related state, reset here
@@ -845,15 +874,32 @@ photonView.RPC("ResetTurnStatesForOthers", RpcTarget.All);}
 	    photonView.RPC("ResetAmount", RpcTarget.AllBuffered);
 photonView.RPC("Reset", RpcTarget.All);
 photonView.RPC("ResetTurnStatesForOthers", RpcTarget.All);
-photonView.RPC("New", RpcTarget.MasterClient);
-
-}
+    if (PhotonNetwork.IsMasterClient && GetExpectedPlayerCount() == PhotonNetwork.PlayerList.Length)
+    {
+        yield break; // ✅ Exit coroutine early
+    }photonView.RPC("New", RpcTarget.MasterClient);}
 [PunRPC]
 	private void New()
 	{ photonView.RPC("ProgressF", RpcTarget.All);
-	if(PhotonNetwork.IsMasterClient)
-		{
+
 	StartSit();
-	}
-	 }
+	
+	 	 }
+	 
+	 class HandRankEqualityComparer : IEqualityComparer<(HandRank rank, List<int> rankValues)>
+{
+    public bool Equals((HandRank rank, List<int> rankValues) x, (HandRank rank, List<int> rankValues) y)
+    {
+        return x.rank == y.rank && x.rankValues.SequenceEqual(y.rankValues);
+    }
+
+    public int GetHashCode((HandRank rank, List<int> rankValues) obj)
+    {
+        int hash = obj.rank.GetHashCode();
+        foreach (var v in obj.rankValues)
+            hash = hash * 31 + v.GetHashCode();
+        return hash;
+    }
+}
+
 }
