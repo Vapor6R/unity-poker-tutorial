@@ -25,7 +25,7 @@ public class HandResult
 }
 public class PlayerManager : MonoBehaviourPunCallbacks, IOnEventCallback
 {
-private const byte EVENT_CODE_SYNC_POTS = 200;
+
 public static bool blindsPosted = false;
 public bool dealerAssigned = false;
 public static Dictionary<int, PlayerPosition> playerPositions = new Dictionary<int, PlayerPosition>();
@@ -120,7 +120,6 @@ photonView.RPC("SendHandResultToMaster", RpcTarget.MasterClient,
     {
         Debug.LogError($"[{photonView.Owner.NickName}] Hand evaluation failed.");
     }
-	ClearHand();
 	bestHand = null;
   bestHandRank = HandRank.None;
 }
@@ -306,12 +305,12 @@ if (callAmount >= chipCount)
     UI?.SetActive(false);
     GameManager.Instance.photonView.RPC("PlayerFinishedTurn", RpcTarget.MasterClient);
 
-    
+    Debug.Log("test");
     int inGameCount = CountPlayersInGame();
     if (inGameCount <= 1)
     {
         photonView.RPC("RevealAllCards", RpcTarget.AllBuffered);
-
+Debug.Log("test2");
         
         if (!GameManager.Instance.flop)
         {
@@ -381,11 +380,17 @@ private void UpdateUI()
 [PunRPC]
 public void ShowOff()
 {
-    
     foreach (Card card in playerHand)
     {
-       
-        card.gameObject.SetActive(true);
+        if (card != null)
+        {
+            card.gameObject.SetActive(true);
+			TransformCardPositions();
+        }
+        else
+        {
+            Debug.LogWarning("Tried to show a destroyed card.");
+        }
     }
 }
 
@@ -507,23 +512,10 @@ public void OnEvent(EventData photonEvent)
         }
 
         default:
-            Debug.LogWarning($"Unhandled event code: {photonEvent.Code}");
+            Debug.LogWarning($"  event code: {photonEvent.Code}");
             break;
     }
-	 if (photonEvent.Code == EVENT_CODE_SYNC_POTS)
-    {
-        object[] serializedPots = (object[])photonEvent.CustomData;
-        GameManager.Instance.pots.Clear();
-
-        foreach (object potDataObj in serializedPots)
-        {
-            object[] potData = (object[])potDataObj;
-            Pot pot = Pot.Deserialize(potData);
-            GameManager.Instance.pots.Add(pot);
-        }
-
-        Debug.Log($"Received {GameManager.Instance.pots.Count} pots synced from master.");
-    }
+	
 }
 
 
@@ -724,26 +716,27 @@ private void HandleUIForPlayer()
 [PunRPC]
 public void AddCardToPlayerHandRPC(int cardViewID, PhotonMessageInfo info)
 {
+    // 🔁 Forcefully clear existing cards from playerHand BEFORE adding the new one
 
-    PhotonView cardView = PhotonView.Find(cardViewID);
+    // 🔄 Add new card
+PhotonView cardView = PhotonView.Find(cardViewID);
     if (cardView != null)
     {
         Card card = cardView.GetComponent<Card>();
         if (card != null)
         {
             playerHand.Add(card);
-            card.transform.SetParent(cardHandPosition);
 
-           
+            card.transform.SetParent(cardHandPosition, false);
             card.gameObject.SetActive(photonView.IsMine);
 
-           
+            // --- Reposition after adding ---
             TransformCardPositions();
-photonView.RPC("HandleUIForPlayerUTG", RpcTarget.AllBuffered);
-     }
+
+            photonView.RPC("HandleUIForPlayerUTG", RpcTarget.AllBuffered);
+        }
     }
 
-   
     InGame = true;
 }
 [PunRPC]
@@ -883,15 +876,18 @@ Debug.Log($".");
     }
 }
  [PunRPC]
-	public void ClearHand()
+public void ClearHand()
 {
-   
+    Debug.Log($"Clearing hand for player {photonView.Owner.NickName}, current hand count: {playerHand.Count}");
+
     foreach (Card card in playerHand)
     {
-        PhotonNetwork.Destroy(card.gameObject); 
+        if (card != null)
+        {
+            Destroy(card.gameObject);
+        }
     }
- playerHand.Clear();
-   
+    playerHand.Clear();
 }
 private void OnSliderValueChange(float value)
 {
@@ -957,7 +953,7 @@ betSlider.maxValue = maxRaise;
 }
 	void Awake()
     {
-		
+		DontDestroyOnLoad(gameObject);
         photonView.RPC("UpdateChipCount", RpcTarget.AllBuffered, chipCount);
 		if (photonView.IsMine)
     {

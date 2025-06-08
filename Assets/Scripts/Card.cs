@@ -60,7 +60,8 @@ public class Card : MonoBehaviourPunCallbacks, IPunObservable
 
     private void Awake()
     {
-        // Ensure the GameObject has a Canvas component
+       DontDestroyOnLoad(gameObject);
+
         if (GetComponent<Canvas>() == null)
         {
             gameObject.AddComponent<Canvas>();

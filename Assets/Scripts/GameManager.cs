@@ -76,7 +76,7 @@ public class GameManager : MonoBehaviourPunCallbacks
 private bool winnerDetermined = false;
 	public Transform potDisplayPanel; // Assign in Inspector
 public TMP_Text potEntryTemplate;
-private const byte EVENT_CODE_SYNC_POTS = 200;
+
 public Dictionary<string, long> playerContributions = new();
 public List<PlayerResultEntry> playerResultsList = new List<PlayerResultEntry>();
 public Dictionary<string, (HandRank rank, List<int> rankValues)> playerResults = new();
@@ -113,23 +113,7 @@ public long CallAmount
     get => callAmount; 
     set => callAmount = value; 
 }
-public void SyncPots()
-{
-    List<object> serializedPots = new List<object>();
 
-    foreach (Pot pot in pots)
-    {
-        serializedPots.Add(pot.Serialize());
-    }
-
-    // Send as a RaiseEvent or Photon Custom Room Property
-    PhotonNetwork.RaiseEvent(
-        EVENT_CODE_SYNC_POTS,
-        serializedPots.ToArray(),
-        new RaiseEventOptions { Receivers = ReceiverGroup.All },
-        new SendOptions { Reliability = true }
-    );
-}
 public void AddPlayerContribution(string playerName, long amount)
 {
     if (!playerContributions.ContainsKey(playerName))
@@ -293,10 +277,14 @@ private List<Pot> CreateSidePots()
 	totalUsed.Clear();
 
 }
-
+public int GetLenght()
+{
+    return FindObjectsOfType<PlayerManager>().Length;
+}
 private int GetExpectedPlayerCount()
 {
-return FindObjectsOfType<PlayerManager>().Length;
+    return FindObjectsOfType<PlayerManager>()
+        .Count(pm => pm.playerHand != null && pm.playerHand.Count > 0);
 }
 private PlayerManager FindPlayerManagerByPhotonPlayer(Player photonPlayer)
 {
@@ -367,9 +355,9 @@ private PlayerManager GetPlayerByName(string playerName)
 
     if (PhotonNetwork.IsMasterClient && activePlayers.Length == 1)
     {
-        photonView.RPC("ProgressF", RpcTarget.All);
+        photonView.RPC("ProgressF", RpcTarget.AllBuffered);
     }
-
+photonView.RPC("ProgressF", RpcTarget.AllBuffered);
     }
 	public void UnregisterPosition(PlayerPosition position)
 {
@@ -435,7 +423,7 @@ foreach(var pot in pots)
 {
     Debug.Log($"Pot Amount: {pot.Amount}, Eligible Players: {string.Join(", ", pot.EligiblePlayers)}");
 }
-SyncPots();
+
 UpdatePotDisplayUI(); 
     var sortedResults = playerResults
         .OrderByDescending(entry => entry.Value.rank)
@@ -454,13 +442,25 @@ foreach (var pot in pots)
 {
     Debug.Log($"🪙 Pot: {pot.Amount}, Eligible: {string.Join(", ", pot.EligiblePlayers)}");
 
-    var tiedWinners = sortedResults
-        .Where(r => pot.EligiblePlayers.Contains(r.Key))
-        .GroupBy(r => (r.Value.rank, r.Value.rankValues), new HandRankEqualityComparer())
-        .OrderByDescending(g => g.Key.rank)
-        .ThenByDescending(g => g.Key.rankValues, new LexicographicComparer())
-        .FirstOrDefault()
-        ?.ToList();
+    var eligibleResults = sortedResults
+    .Where(r => pot.EligiblePlayers.Contains(r.Key))
+    .ToList();
+
+if (eligibleResults.Count == 0)
+{
+    Debug.LogWarning("⚠️ No eligible players for this pot.");
+    continue;
+}
+
+// Get the best hand
+var best = eligibleResults.First();
+
+// Find tied winners (same rank and exact same rankValues)
+var tiedWinners = eligibleResults
+    .Where(r =>
+        r.Value.rank == best.Value.rank &&
+        r.Value.rankValues.SequenceEqual(best.Value.rankValues))
+    .ToList();
 
     if (tiedWinners == null || tiedWinners.Count == 0)
     {
@@ -482,6 +482,7 @@ foreach (var pot in pots)
 
 playerResults.Clear();
 playerResultsList.Clear();
+
 }
 void AwardChips(string playerName, long amount)
 {
@@ -498,6 +499,12 @@ void AwardChips(string playerName, long amount)
     Debug.Log($"Player {playerName} now has {player.chipCount} chips");
 
     player.photonView.RPC("UpdateChipCount", RpcTarget.AllBuffered, player.chipCount);
+	
+	photonView.RPC("ProgressF", RpcTarget.AllBuffered);
+foreach (PlayerManager pm in FindObjectsOfType<PlayerManager>())
+{
+    pm.photonView.RPC("ClearHand", RpcTarget.AllBuffered);
+}
 }
 [PunRPC]
     public void AddToPot(long amount)
@@ -592,6 +599,7 @@ if (Instance != null && Instance != this)
 	[PunRPC]
 	private void ProgressF()
 	{Progress = false;
+	Debug.Log($"[RPC] Reset called on {PhotonNetwork.NickName}");
 	}
 	[PunRPC]
 	private void ProgressTrue()
@@ -672,6 +680,9 @@ yield return new WaitForSeconds(1f);
    [PunRPC]
 public void StartSit()
 {
+	
+	if(Progress)
+		return;
   winnerDetermined = false;
 
 pots.Clear(); // Remove all existing pots
@@ -696,13 +707,13 @@ pots.Clear(); // Remove all existing pots
             }
         }
         photonView.RPC("first", RpcTarget.AllBuffered);
-        foreach (PlayerManager playerManager in playerManagers)
-        {
-            playerManager.photonView.RPC("gametrue", RpcTarget.All);
-        }
+foreach (PlayerManager pm in FindObjectsOfType<PlayerManager>())
+{
+pm.photonView.RPC("gametrue", RpcTarget.All);}
 
         photonView.RPC("hasEvaluatedf", RpcTarget.All);
         photonView.RPC("Resetstate", RpcTarget.All);
+		
     }
 }
 
@@ -789,14 +800,11 @@ private void ResetTurnStatesRaise()
 }
 private void Final()
 {
-
-
 photonView.RPC("EvalForAll", RpcTarget.AllBuffered);
-    photonView.RPC("Reset", RpcTarget.AllBuffered);
+photonView.RPC("Reset", RpcTarget.AllBuffered);
 Debug.Log("test");
-
-    StartCoroutine(ResetRound());
-    Rotate();
+StartCoroutine(ResetRound());
+Rotate();
 }
 [PunRPC]
 	private void ResetAmount()
@@ -871,16 +879,17 @@ photonView.RPC("ResetTurnStatesForOthers", RpcTarget.All);}
     {
         pm.photonView.RPC("Check", RpcTarget.AllViaServer);
     }
+	Check();
 	    photonView.RPC("ResetAmount", RpcTarget.AllBuffered);
-photonView.RPC("Reset", RpcTarget.All);
+photonView.RPC("Reset", RpcTarget.AllBuffered);
 photonView.RPC("ResetTurnStatesForOthers", RpcTarget.All);
-    if (PhotonNetwork.IsMasterClient && GetExpectedPlayerCount() == PhotonNetwork.PlayerList.Length)
+    if (GetLenght() != PhotonNetwork.PlayerList.Length)
     {
-        yield break; // ✅ Exit coroutine early
+       yield break; // ✅ Exit coroutine early
     }photonView.RPC("New", RpcTarget.MasterClient);}
 [PunRPC]
 	private void New()
-	{ photonView.RPC("ProgressF", RpcTarget.All);
+	{ 
 
 	StartSit();
 	

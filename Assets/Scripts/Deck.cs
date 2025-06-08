@@ -104,16 +104,6 @@ private int[] ConvertCardListToViewIDs(List<Card> cards)
 		photonView.RPC("RestartRPC", RpcTarget.MasterClient);
 		
     }
-	[PunRPC]
-	private void ClearPlayerHands()
-    {
-        // Find all players and clear their hands
-        PlayerManager[] playerHandlers = FindObjectsOfType<PlayerManager>();
-        foreach (PlayerManager handler in playerHandlers)
-        {
-            handler.ClearHand(); // Implement a method in PlayerCardHandler to clear the hand
-        }
-    }
 	
 	[PunRPC]
 private void ClearCommunityCards()
@@ -153,8 +143,8 @@ public void ClearCards()
 
     // Clear the list of community cards
     cards.Clear();
-photonView.RPC("ClearPlayerHands", RpcTarget.All);
-if(PhotonNetwork.IsMasterClient){
+
+if(PhotonNetwork.IsMasterClient && GameManager.Instance.GetLenght() == PhotonNetwork.PlayerList.Length ){
 	
 StartCoroutine(IniAfterDelay());  
 }
@@ -165,7 +155,6 @@ StartCoroutine(IniAfterDelay());
     public void RestartRPC()
     {
 photonView.RPC("ClearCommunityCards", RpcTarget.MasterClient);
-        photonView.RPC("ClearPlayerHands", RpcTarget.AllBuffered);
 		photonView.RPC("ClearCards", RpcTarget.All);
 	
     }
@@ -259,12 +248,13 @@ if (players.Length >= 2)
     }
 	   private IEnumerator IniAfterDelay()
     {
-        yield return new WaitForSeconds(1f);
+        yield return new WaitForSeconds(2f);
        
 photonView.RPC("InitializeDeck", RpcTarget.MasterClient);
 
        StartCoroutine(ShuffleDeckAfterDelay());
 	    StartCoroutine(DelayedDistributeCards());
+		
     }
     [PunRPC]
     private void InitializeCard(int viewID, int rank, int suit)
@@ -338,13 +328,22 @@ private PhotonView GetPlayerManagerPhotonView(Player player)
                 PlayerManager playerHandler = playerGO.GetComponent<PlayerManager>();
                 if (playerHandler != null)
                 {
+					foreach (Card oldCard in playerHandler.playerHand)
+{
+    if (oldCard != null)
+        Destroy(oldCard.gameObject); // or SetActive(false)
+}
+playerHandler.playerHand.Clear();
                     for (int i = 0; i < cardsToDistributePerPlayer; i++)
                     {
                         Card drawnCard = DrawCard();
                         if (drawnCard != null)
                         {
-                            playerHandler.photonView.RPC("AddCardToPlayerHandRPC", RpcTarget.AllBuffered, drawnCard.photonView.ViewID);
 							
+							    
+
+                            playerHandler.photonView.RPC("AddCardToPlayerHandRPC", RpcTarget.AllBuffered, drawnCard.photonView.ViewID);
+							GameManager.Instance.photonView.RPC("ProgressTrue", RpcTarget.All);
                         }
                     }
                 }
