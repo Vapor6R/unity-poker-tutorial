@@ -33,7 +33,7 @@ public class Card : MonoBehaviourPunCallbacks, IPunObservable
     public Rank rank;
     public Suit suit;
     private Image imageComponent;
-
+public GameObject cardObject;
     // Method to initialize the card with a rank and suit
     public void InitializeCard(Rank rank, Suit suit)
     {

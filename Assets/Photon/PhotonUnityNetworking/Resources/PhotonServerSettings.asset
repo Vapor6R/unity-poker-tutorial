@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: PhotonServerSettings
   m_EditorClassIdentifier: 
   AppSettings:
-    AppIdRealtime: ab50ff9e-ac6a-47b2-b78b-2aeafbd3f348
+    AppIdRealtime: 17592d5a-9b9f-4bc0-bbd9-e1f46ca313d2
     AppIdFusion: 
     AppIdChat: 
     AppIdVoice: 
@@ -39,81 +39,75 @@ MonoBehaviour:
   - DestroySpaceship
   - Fire
   - RespawnSpaceship
+  - FreeButton
+  - OccupyButton
+  - RPC_SetSeatIndex
+  - ActivateUI
+  - RotateSeats
+  - AddToPot
+  - PostBlind
+  - UpdateChipCount
+  - UpdatePotUI
   - AddCommunityCardRPC
-  - ClearCards
-  - ClearCommunityCards
-  - ClearHand
-  - ClearPlayerHands
   - DealCommunityCardsRPC
   - DealRiverCardRPC
   - DealTurnCardRPC
   - DistributeAndAddCommunityCards
   - DistributeCardsRPC
-  - HideButtonRPC
   - InitializeCard
   - InitializeDeck
   - RestartRPC
+  - RPC_ClearCommunityAndDeck
   - ShuffleDeckRPC
-  - StartSit
-  - IsPlaying
-  - SetCurrentSeat
-  - RestartGameRPC
+  - Start
   - AddCardToPlayerHandRPC
-  - CheckAndStandUpIfBroke
+  - StartSit
+  - Test
+  - RPC_SetPlayerWaiting
+  - CheckPlayerCountAndAssignRoles
+  - RPC_PassTurnToNextBySeat
+  - SetGameState
   - HandleUIForPlayerUTG
-  - first
-  - firstfalse
+  - RPC_SetTurn
+  - UpdateCallAmountUI
   - floptrue
   - PlayerFinishedTurn
-  - ProgressF
-  - ProgressTrue
   - rivertrue
   - turntrue
-  - UpdateRaiseAmountText
-  - SetPlayerName
-  - UpdateChipCount
   - ResetTurnStatesForOthers
-  - UpdateChip
-  - UpdateCallAmount
-  - ShowOff
   - AddCommunityCardToHand
-  - New
-  - RotatePlayerPositions
-  - UpdateRaiseSliderMaxValue
-  - SetSliderToCallAmount
-  - UpdatePotAmountRPC
-  - PostBlinds
-  - AddToPot
-  - UpdatePot
-  - UpdateUI
-  - EvalForAll
-  - EvaluateHand
-  - ReceiveWinnings
-  - AddCommunityCardsRPC
-  - UpdatePotUI
-  - Reset
-  - SendHandResultToMaster
-  - RevealAllCards
-  - CallAmountReset
-  - ResetAmount
-  - AssignPositions
+  - AddChipsRPC
   - Check
-  - EvaluateHandRPC
-  - DebugShowHand
-  - ReceiveHandForDebug
-  - ShareHandWithMaster
-  - ForceStandUp
-  - AddPlayerToList
-  - AssignPositionRPC
-  - ResetTurnStatesRaise
-  - SetStatueToWaiting
-  - Called
-  - hasEvaluatedF
-  - gametrue
-  - hasEvaluatedf
-  - Resetstate
-  - AddContribution
-  - RPC_AddChipsToPot
+  - CheckAndResetIfSinglePlayer
+  - ResetInProgressF
+  - RestartGame
+  - Reset
+  - UpdateRaiseAmountText
+  - BroadcastCallAmount
+  - IsPlayingT
+  - FinishedF
+  - DebugAllPlayers
+  - ResetInProgressT
+  - Distributing
+  - Dfalse
+  - Decktrue
+  - PostBlinds
+  - blindf
+  - blindt
+  - BlindF
+  - RoundInProgressF
+  - Progress
+  - ProgressF
+  - RPC_SetFolded
+  - RotateSeatsMaster
+  - RPC_ApplySeatMapping
+  - RPC_RotateSeats
+  - RPC_Setplaying
+  - RevealLocalHand
+  - RPC_SetActed
+  - RPC_SetActedF
+  - AssignSeat
+  - RPC_SetButtonIndex
   DisableAutoOpenWizard: 1
   ShowSettings: 0
   DevRegionSetOnce: 1
