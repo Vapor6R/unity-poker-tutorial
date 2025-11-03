@@ -22,7 +22,7 @@ public enum Statue
         AllIn = 5,
     }
 public class PlayerManager : MonoBehaviourPunCallbacks
-{  
+{  public TMP_Text actionText;
 public int buttonIndex = -1; // Which button the player is sitting at
 public bool IsPlayingIN = false;
 public SpawnButtonManager currentSeat;
@@ -64,6 +64,27 @@ public TMP_Text chipCountText;
     return value;
 }
 
+
+ [PunRPC]
+    public void UpdateActionText(string action, long amount)
+    {
+        if (actionText != null)
+        {
+            actionText.text = $"{action} {amount}";
+            actionText.gameObject.SetActive(true);
+        }
+    }
+    
+    // Call this to clear the action text
+    [PunRPC]
+    public void ClearActionText()
+    {
+        if (actionText != null)
+        {
+            actionText.text = "";
+            actionText.gameObject.SetActive(false);
+        }
+    }
 [PunRPC]
 public void RPC_SetButtonIndex(int btnIdx)
 {
@@ -498,8 +519,6 @@ public void PostBlind(long Amount)
         return;
     }
     
-    Debug.Log($"💰 {PlayerName} posting blind: {Amount}");
-    
     if (chipCount < Amount)
     {
         // Player is all-in
@@ -510,7 +529,9 @@ public void PostBlind(long Amount)
         if (PotManager.Instance != null)
         {
             PotManager.Instance.photonView.RPC("AddToPot", RpcTarget.AllBuffered, PhotonNetwork.NickName, allInAmount);
-        }
+         photonView.RPC("UpdateActionText", RpcTarget.AllBuffered, "Blind", allInAmount);
+		
+		}
         
         currentBet = allInAmount;
     }
@@ -524,7 +545,8 @@ public void PostBlind(long Amount)
         if (PotManager.Instance != null)
         {
             PotManager.Instance.photonView.RPC("AddToPot", RpcTarget.AllBuffered, PhotonNetwork.NickName, Amount);           
-        }
+        photonView.RPC("UpdateActionText", RpcTarget.AllBuffered, "Blind", Amount);
+		}
     }
     
     // Update UI for all clients
@@ -592,6 +614,8 @@ public void OnCall()
 	}
     Statue newStatue = (chipCount <= 0) ? Statue.AllIn : Statue.Checked;
     FinishTurn(newStatue);
+	ConfigureSliderForChips(chipCount);
+	photonView.RPC("UpdateActionText", RpcTarget.AllBuffered, "Call", callAmount);
 }
 public long GetchipCount()
     {
@@ -631,7 +655,7 @@ private void FinishTurn(Statue newStatue)
 
     // ✅ Broadcast NEW chip count to all
     photonView.RPC("UpdateChipCount", RpcTarget.AllBuffered, chipCount);
-
+ photonView.RPC("UpdateActionText", RpcTarget.AllBuffered, "Raise", PlayersBet);
     // ✅ Add to pot
     if (PotManager.Instance != null)
     {
@@ -663,6 +687,8 @@ private void FinishTurn(Statue newStatue)
 	else if(isAllIn){//IsPlaying=false;
 	//photonView.RPC("RPC_Setplaying", RpcTarget.AllBuffered, false); 
 	}
+	ConfigureSliderForChips(chipCount);
+	  
 }
 
 [PunRPC]
