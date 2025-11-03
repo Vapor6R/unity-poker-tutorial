@@ -5,7 +5,7 @@ using Photon.Pun;
 using System.Collections;
 using TMPro;
 using System;
-
+using System.Globalization;
 [Serializable]
 public class PlayerContributionEntry
 {
@@ -101,7 +101,7 @@ public void AddToPot(string playerName, long betAmount)
     public void UpdatePotUI(long x)
     {
         if (potText != null)
-            potText.text = $"Pot: {x}";
+            potText.text = $"Pot: {FormatChipsWithSuffix(x)}";
     }
   public void CalculateSidePots()
 {
@@ -256,7 +256,19 @@ DeckInstance.photonView.RPC("Dfalse", RpcTarget.AllBuffered);
 StartCoroutine(NextStage());
     yield break;
 }
+public static string FormatChipsWithSuffix(long amount)
+{
+    if (amount >= 1_000_000_000_000)
+        return (amount / 1_000_000_000_000d).ToString("0.#", CultureInfo.InvariantCulture) + "T";
+    if (amount >= 1_000_000_000)
+        return (amount / 1_000_000_000d).ToString("0.#", CultureInfo.InvariantCulture) + "B";
+    if (amount >= 1_000_000)
+        return (amount / 1_000_000d).ToString("0.#", CultureInfo.InvariantCulture) + "M";
+    if (amount >= 1_000)
+        return (amount / 1_000d).ToString("0.#", CultureInfo.InvariantCulture) + "K";
 
+    return amount.ToString("N0", CultureInfo.InvariantCulture);
+}
  public IEnumerator NextStage()
 {
 	yield return new WaitForSeconds(1f);
@@ -267,4 +279,106 @@ StartCoroutine(NextStage());
 
     yield break;
 
-}}
+}
+public IEnumerator AwardPotToLastPlayer(List<string> playerNames)
+{
+    isDistributing = true;
+
+    if (TotalPot <= 0)
+    {
+        Debug.LogWarning("⚠️ No pot to award!");
+        isDistributing = false;
+        yield break;
+    }
+
+    if (playerNames == null || playerNames.Count == 0)
+    {
+        Debug.LogError("❌ No player names provided!");
+        isDistributing = false;
+        yield break;
+    }
+
+    // Get the last player name (winner)
+    string winnerName = playerNames.Last();
+
+    Debug.Log($"==== 🏆 AWARDING POT TO LAST REMAINING PLAYER ====");
+    Debug.Log($"Winner: {winnerName} | Pot Amount: {TotalPot}");
+
+    // Find the winner's PlayerManager
+    PlayerManager winner = GameManager.Instance.FindPlayerByName(winnerName);
+    if (winner == null)
+    {
+        Debug.LogError($"❌ Could not find PlayerManager for {winnerName}");
+        isDistributing = false;
+        yield break;
+    }
+
+    // Award the entire pot to the winner
+    long potToAward = TotalPot;
+    winner.photonView.RPC("AddChipsRPC", winner.photonView.Owner, potToAward);
+
+    Debug.Log($"🏆 {winnerName} wins {potToAward} chips (all others folded)");
+
+    // Optional delay for visual effect
+    yield return new WaitForSeconds(2);
+
+    // Reset pot and contributions
+    TotalPot = 0;
+    playerContributions.Clear();
+    sidePots.Clear();
+    
+    photonView.RPC("UpdatePotUI", RpcTarget.AllBuffered, 0);
+
+    isDistributing = false;
+
+    // Trigger game reset and next round
+    DeckInstance.photonView.RPC("Dfalse", RpcTarget.AllBuffered);
+    DeckInstance.photonView.RPC("ResetInProgressF", RpcTarget.AllBuffered);
+    GameManager.Instance.photonView.RPC("RoundInProgressF", RpcTarget.AllBuffered);
+    GameManager.Instance.photonView.RPC("BlindF", RpcTarget.AllBuffered);
+
+    // Rotate seats
+    SpawnButtonManager spawn = FindObjectOfType<SpawnButtonManager>();
+    if (spawn != null && spawn.photonView != null)
+    {
+        spawn.photonView.RPC("RPC_RotateSeats", RpcTarget.AllBuffered);
+        Debug.Log("🔄 [PotManager] Seats rotated successfully after awarding chips.");
+    }
+    else
+    {
+        Debug.LogError("❌ SpawnButtonManager not found! Cannot rotate seats.");
+    }
+
+    DeckInstance.photonView.RPC("DeckFalse", RpcTarget.AllBuffered);
+
+    // Reset player states
+    foreach (PlayerManager pm in FindObjectsOfType<PlayerManager>())
+    {
+        if (pm != null && pm.photonView != null)
+        {
+            pm.photonView.RPC("Check", RpcTarget.AllViaServer);
+            pm.IsPlaying = false;
+        }
+    }
+
+    // Check if enough players remain for next round
+    int activeCount = FindObjectsOfType<PlayerManager>()
+        .Count(pm => pm != null && pm.InGame && pm.chipCount > 0);
+
+    if (activeCount <= 1)
+    {
+        Debug.LogWarning("⚠️ Not enough players to continue!");
+        yield break;
+    }
+
+    DeckInstance.photonView.RPC("DeckFalse", RpcTarget.AllBuffered);
+    DeckInstance.photonView.RPC("Dfalse", RpcTarget.AllBuffered);
+    GameManager.Instance.photonView.RPC("Reset", RpcTarget.AllBuffered);
+
+    // Start next round
+    StartCoroutine(NextStage());
+
+    yield break;
+}
+
+}

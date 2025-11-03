@@ -23,6 +23,10 @@ public enum Statue
     }
 public class PlayerManager : MonoBehaviourPunCallbacks
 {  
+private Coroutine timerRoutine;
+private bool timerStopped = false;
+public TMP_Text timerText;
+public TMP_Text actionText;
 public int buttonIndex = -1; // Which button the player is sitting at
 public bool IsPlayingIN = false;
 public SpawnButtonManager currentSeat;
@@ -55,15 +59,87 @@ public TMP_Text chipCountText;
    private bool FirstSit = true;
    	public TMP_Text betValueText;
 	private long sliderUnit = 1000L;   
-	
-	
+	public GameObject D;
+		public GameObject SB;
+			public GameObject BB;
 	private long ClampLong(long value, long min, long max)
 {
     if (value < min) return min;
     if (value > max) return max;
     return value;
 }
+public void StartCountdown(float duration)
+{
 
+    timerStopped = false;
+
+    if (timerRoutine != null)
+        StopCoroutine(timerRoutine);
+
+    timerRoutine = StartCoroutine(TimerCoroutine(duration));
+}
+public void StopTimer()
+{
+    if (timerRoutine != null)
+        StopCoroutine(timerRoutine);
+
+    timerStopped = true;
+
+    photonView.RPC("RPC_OnTimerFinished", RpcTarget.All);
+}private IEnumerator TimerCoroutine(float duration)
+{
+    float timer = duration;
+    timerStopped = false;
+
+    while (timer > 0 && !timerStopped)
+    {
+        timer -= Time.deltaTime;
+        photonView.RPC("RPC_UpdateTimerUI", RpcTarget.All, timer);
+        yield return null;
+    }
+
+    // ✅ Only Master calls finish once
+    if (!timerStopped && PhotonNetwork.IsMasterClient)
+    {
+        photonView.RPC("RPC_OnTimerFinished", RpcTarget.All);
+    }
+}
+
+[PunRPC]
+void RPC_UpdateTimerUI(float timeLeft)
+{
+	if(!photonView.IsMine)
+		return;
+    timerText.text = Mathf.CeilToInt(timeLeft).ToString();
+}
+[PunRPC]
+void RPC_OnTimerFinished()
+{
+    Debug.Log("Timer finished!");
+
+    GameManager.Instance.photonView.RPC("RPC_PassTurnToNextBySeat", RpcTarget.MasterClient, seatIndex);
+    // Example: auto-fold player, start next round, pass turn, etc.
+}
+ [PunRPC]
+    public void UpdateActionText(string action, long amount)
+    {
+        if (actionText != null)
+        {
+            actionText.text = $"{action} {FormatChipsWithSuffix(amount)}";
+            actionText.gameObject.SetActive(true);
+        }
+    }
+    
+    // Call this to clear the action text
+    [PunRPC]
+    public void ClearActionText()
+    {
+        if (actionText != null)
+        {
+            actionText.text = "";
+            actionText.gameObject.SetActive(false);
+        }
+    }
 [PunRPC]
 public void RPC_SetButtonIndex(int btnIdx)
 {
@@ -139,6 +215,7 @@ if (GameManager.activePlayers.Contains(this))
         Debug.Log($"❌ Removed {PlayerName} from activePlayers");
     }
  GameManager.Instance.photonView.RPC("CheckAndResetIfSinglePlayer", RpcTarget.All);
+ OnFold();
 }
 public void OnPhotonSerializeView(PhotonStream stream, PhotonMessageInfo info)
 {
@@ -240,9 +317,68 @@ public void EvaluateMyHand()
         Debug.LogError($"❌ Error evaluating hand for {PlayerName}: {e.Message}");
     }
 }
+[PunRPC]
+private void Logos()
+{
+
+
+    List<PlayerManager> activePlayers = FindObjectsOfType<PlayerManager>()
+        .Where(p => p != null 
+            && p.InGame 
+            && !p.isFolded 
+            && p.chipCount > 0
+            && p.seatIndex >= 0
+            && p.IsPlaying)
+        .OrderBy(p => p.seatIndex)
+        .ToList();
+    
+    if (activePlayers.Count == 0)
+        return;
+    
+    // Deactivate all blind indicators for all players first
+    foreach (PlayerManager player in activePlayers)
+    {
+        if (player.D != null) player.D.SetActive(false);
+        if (player.SB != null) player.SB.SetActive(false);
+        if (player.BB != null) player.BB.SetActive(false);
+    }
+    
+    int activeCount = activePlayers.Count;
+    
+    // ✅ Heads-up (2 players): Dealer = SB, other = BB
+    if (activeCount <= 2)
+    {
+        // Lowest seat = Dealer + SB
+        PlayerManager dealerPlayer = activePlayers[0];
+        if (dealerPlayer.D != null) dealerPlayer.D.SetActive(true);
+        if (dealerPlayer.SB != null) dealerPlayer.SB.SetActive(true);
+        
+        // 2nd lowest seat = BB
+        if (activeCount == 2)
+        {
+            PlayerManager bbPlayer = activePlayers[1];
+            if (bbPlayer.BB != null) bbPlayer.BB.SetActive(true);
+        }
+    }
+    // ✅ 3+ players: Normal positions
+    else if (activeCount > 2)
+    {
+        // Lowest seat = Dealer
+        PlayerManager dealerPlayer = activePlayers[0];
+        if (dealerPlayer.D != null) dealerPlayer.D.SetActive(true);
+        
+        // 2nd lowest seat = SB
+        PlayerManager sbPlayer = activePlayers[1];
+        if (sbPlayer.SB != null) sbPlayer.SB.SetActive(true);
+        
+        // 3rd lowest seat = BB
+        PlayerManager bbPlayer = activePlayers[2];
+        if (bbPlayer.BB != null) bbPlayer.BB.SetActive(true);
+    }
+}
 private void Update()
 {
-    // Only evaluate if we have exactly 7 cards (2 hole cards + 5 community cards)
+	
     if (playerHand != null && playerHand.Count == 7)
     {
         EvaluateMyHand();
@@ -349,8 +485,8 @@ public void RPC_SetTurn(int seatIndex)
     Debug.Log($"   This player's chipCount: {chipCount}");
 
     if (UI != null)
-        UI.SetActive(isMyTurn);
-    
+	{UI.SetActive(isMyTurn);}
+    StartCountdown(20f);
     photonView.RPC("IsPlaying", RpcTarget.AllBuffered, (int)Statue.Playing);
     photonView.RPC("WaitingF", RpcTarget.AllBuffered);
     
@@ -373,34 +509,70 @@ public void UpdateCallAmountUI(long amount)
 {
     callAmount = amount;
     if (callAmountText != null)
-        callAmountText.text = $"Call: {amount}";
+        callAmountText.text = $"Call: {FormatChipsWithSuffix(amount)}";
 }
-
 [PunRPC]
 private void HandleUIForPlayerUTG()
 {
-    // Find the player with the lowest seat index
-    PlayerManager utgPlayer = FindObjectsOfType<PlayerManager>()
-        .Where(p => p != null && p.InGame && !p.isFolded && p.chipCount > 0)
+    // ✅ Get all eligible players (can take action)
+    List<PlayerManager> eligiblePlayers = FindObjectsOfType<PlayerManager>()
+        .Where(p => p != null 
+            && p.InGame 
+            && !p.isFolded 
+            && p.chipCount > 0
+            && p.seatIndex >= 0
+            && p.statue != Statue.Folded
+            && p.statue != Statue.AllIn
+            && p.IsPlaying)
         .OrderBy(p => p.seatIndex)
-        .FirstOrDefault();
+        .ToList();
     
-    if (utgPlayer != null)
+    if (eligiblePlayers.Count == 0)
     {
-        Debug.Log($"✅ UTG Player: {utgPlayer.PlayerName} (Seat {utgPlayer.seatIndex})");
+        Debug.LogWarning("⚠️ No eligible players found for UTG");
+        return;
+    }
+    
+    // ✅ UTG is the first player in the ordered list (lowest seat index)
+    PlayerManager utgPlayer = eligiblePlayers[0];
+    
+    Debug.Log($"✅ UTG Player: {utgPlayer.PlayerName} (Seat {utgPlayer.seatIndex})");
+    
+    // ✅ Find the local player
+    PlayerManager localPlayer = FindObjectsOfType<PlayerManager>()
+        .FirstOrDefault(p => p != null && p.photonView != null && p.photonView.IsMine);
+    
+    if (localPlayer == null)
+    {
+        Debug.LogWarning("⚠️ Local player not found");
+        return;
+    }
+    
+    // ✅ Check if local player is the UTG player
+    if (localPlayer.seatIndex == utgPlayer.seatIndex)
+    {
+        Debug.Log($"✅ Local player IS UTG. Activating UI for {localPlayer.PlayerName}");
         
-        // Check if this is the local player
-        PlayerManager localPlayer = FindObjectsOfType<PlayerManager>()
-            .FirstOrDefault(p => p != null && p.photonView != null && p.photonView.IsMine);
-        
-        if (localPlayer != null && localPlayer.seatIndex == utgPlayer.seatIndex)
+        // Activate UI for local player
+        if (localPlayer.UI != null)
         {
-            // This is the local player and they are UTG
-            if (localPlayer.UI != null)
-            {
-                localPlayer.UI.SetActive(true);
-                localPlayer.ConfigureSliderForChips(chipCount);
-            }
+            localPlayer.UI.SetActive(true);
+			localPlayer.StartCountdown(20f);
+            localPlayer.ConfigureSliderForChips(localPlayer.chipCount);
+        }
+        else
+        {
+            Debug.LogWarning("⚠️ Local player UI is null");
+        }
+    }
+    else
+    {
+        Debug.Log($"ℹ️ Local player ({localPlayer.PlayerName}, Seat {localPlayer.seatIndex}) is NOT UTG");
+        
+        // Ensure local player's UI is hidden if they're not UTG
+        if (localPlayer.UI != null && localPlayer.UI.activeSelf)
+        {
+            localPlayer.UI.SetActive(false);
         }
     }
 }
@@ -426,10 +598,11 @@ foreach (var card in playerHand)
             if (card != null)
             {
                 playerHand.Add(card);
+				 photonView.RPC("RPC_Setplaying", RpcTarget.AllBuffered, true); 
 photonView.RPC("HandleUIForPlayerUTG", RpcTarget.AllBuffered); 
                 card.transform.SetParent(cardHandPosition, false);
                 card.gameObject.SetActive(photonView.IsMine);
- photonView.RPC("RPC_Setplaying", RpcTarget.AllBuffered, true); 
+ photonView.RPC("Logos", RpcTarget.AllBuffered); 
                 // --- Reposition after adding ---
                 TransformCardPositions();
 
@@ -442,7 +615,9 @@ photonView.RPC("HandleUIForPlayerUTG", RpcTarget.AllBuffered);
 	{
 		if(!photonView.IsMine)
 			return;
+		StopTimer();
 photonView.RPC("RPC_SetFolded", RpcTarget.AllBuffered, true);
+photonView.RPC("RPC_Setplaying", RpcTarget.AllBuffered, false); 
 		if (UI != null)
         UI.SetActive(false);
     photonView.RPC("ActedFalse", RpcTarget.Others);
@@ -498,33 +673,34 @@ public void PostBlind(long Amount)
         return;
     }
     
-    Debug.Log($"💰 {PlayerName} posting blind: {Amount}");
-    
     if (chipCount < Amount)
     {
         // Player is all-in
-        Debug.Log($"💰 {gameObject.name} posts Blind ALL-IN: {chipCount}");
+        Debug.Log($"💰 {gameObject.name} posts Blind ALL-IN: {FormatChipsWithSuffix(chipCount)}");
         long allInAmount = chipCount;
         chipCount = 0;
         
         if (PotManager.Instance != null)
         {
             PotManager.Instance.photonView.RPC("AddToPot", RpcTarget.AllBuffered, PhotonNetwork.NickName, allInAmount);
-        }
+         photonView.RPC("UpdateActionText", RpcTarget.AllBuffered, "Blind", allInAmount);
+		
+		}
         
         currentBet = allInAmount;
     }
     else
     {
         // Normal blind post
-        Debug.Log($"💰 {gameObject.name} posts Blind: {Amount}");
+        Debug.Log($"💰 {gameObject.name} posts Blind: {FormatChipsWithSuffix(Amount)}");
         chipCount -= Amount;
         currentBet = Amount;
         
         if (PotManager.Instance != null)
         {
             PotManager.Instance.photonView.RPC("AddToPot", RpcTarget.AllBuffered, PhotonNetwork.NickName, Amount);           
-        }
+        photonView.RPC("UpdateActionText", RpcTarget.AllBuffered, "Blind", Amount);
+		}
     }
     
     // Update UI for all clients
@@ -538,7 +714,7 @@ public void UpdateChipCount(long newChipCount)
     chipCount = newChipCount;
 
     if (chipCountText != null)
-        chipCountText.text = $"${chipCount}";
+        chipCountText.text = $"${ FormatChipsWithSuffix(chipCount)}";
     else
         Debug.LogWarning($"⚠️ chipCountText is null on {gameObject.name}");
 
@@ -550,7 +726,10 @@ public void UpdateChipCount(long newChipCount)
 public void OnCall()
 {
 	   if (!photonView.IsMine)
-        return;
+	   {return;}
+
+
+StopTimer();
     Acted = true;
     UI?.SetActive(false);
     Debug.Log($"\n===== [OnCall] {PlayerName} START =====");
@@ -592,6 +771,8 @@ public void OnCall()
 	}
     Statue newStatue = (chipCount <= 0) ? Statue.AllIn : Statue.Checked;
     FinishTurn(newStatue);
+	ConfigureSliderForChips(chipCount);
+	photonView.RPC("UpdateActionText", RpcTarget.AllBuffered, "Call", callAmount);
 }
 public long GetchipCount()
     {
@@ -611,6 +792,7 @@ private void FinishTurn(Statue newStatue)
 {
     if (!photonView.IsMine)
         return;
+	StopTimer();
  if (UI != null)
         UI.SetActive(false);
     photonView.RPC("ActedFalse", RpcTarget.Others);
@@ -631,7 +813,7 @@ private void FinishTurn(Statue newStatue)
 
     // ✅ Broadcast NEW chip count to all
     photonView.RPC("UpdateChipCount", RpcTarget.AllBuffered, chipCount);
-
+ photonView.RPC("UpdateActionText", RpcTarget.AllBuffered, "Raise", PlayersBet);
     // ✅ Add to pot
     if (PotManager.Instance != null)
     {
@@ -663,6 +845,8 @@ private void FinishTurn(Statue newStatue)
 	else if(isAllIn){//IsPlaying=false;
 	//photonView.RPC("RPC_Setplaying", RpcTarget.AllBuffered, false); 
 	}
+	ConfigureSliderForChips(chipCount);
+	  
 }
 
 [PunRPC]
