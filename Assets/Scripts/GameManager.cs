@@ -144,9 +144,11 @@ public IEnumerator NextStep()
     }
     
     // ✅ Step 3 – Sort players using custom comparison
-    List<PlayerManager> showdownOrder = validPlayers
-        .OrderByDescending(p => p, new HandComparer())
-        .ToList();
+
+		List<PlayerManager> showdownOrder = validPlayers
+    .OrderByDescending(p => p, new HandComparer())
+    .ToList();
+
     
     Debug.Log("==== 🃏 SHOWDOWN ORDER ====");
     for (int i = 0; i < showdownOrder.Count; i++)
@@ -233,6 +235,12 @@ PotManager.Instance.TotalPot = 0;
         photonView.RPC("ResetTurnStatesForOthers", RpcTarget.AllBuffered);
 photonView.RPC("RoundInProgressF", RpcTarget.AllBuffered);
  photonView.RPC("ProgressF", RpcTarget.AllBuffered);
+ DeckInstance.photonView.RPC("Dfalse", RpcTarget.AllBuffered);
+    DeckInstance.photonView.RPC("ResetInProgressF", RpcTarget.AllBuffered);
+ DeckInstance.photonView.RPC("DeckFalse", RpcTarget.AllBuffered);
+    DeckInstance.photonView.RPC("Dfalse", RpcTarget.AllBuffered);
+    GameManager.Instance.photonView.RPC("BlindF", RpcTarget.AllBuffered);
+
 photonView.RPC("SetGameState", RpcTarget.MasterClient, GameState.Waiting);
 
     }
@@ -511,8 +519,7 @@ public void RPC_PassTurnToNextBySeat(int currentSeat)
             && p.chipCount > 0
             && p.statue != Statue.AllIn
             && p.statue != Statue.Folded
-            && p.IsPlaying
-			&& !p.Acted)
+            && p.IsPlaying)
         .OrderBy(p => p.seatIndex)
         .ToList();
     
@@ -533,21 +540,16 @@ public void RPC_PassTurnToNextBySeat(int currentSeat)
         // ✅ If there's only 1 non-folded player total (everyone else folded)
         if (nonFoldedCount == 1)
         {
-            PotManager.Instance.CalculateSidePots();
-            StartCoroutine(
-                PotManager.Instance.AwardPots(
-                    activeP.Select(p => p.PlayerName).ToList()
-                )
-            );
+            List<string> playerNames = new List<string> { activeP[0].photonView.Owner.NickName };
+            StartCoroutine(PotManager.Instance.AwardPotToLastPlayer(playerNames));
             return;
         }
         
         // ✅ If there are 2+ non-folded players but only 1 can act (heads-up, one all-in)
-        // Give the remaining player their turn to call/fold
         PlayerManager lastActivePlayer = activeP[0];
         
         // Check if this player has already acted this round
-        if (lastActivePlayer.seatIndex == currentSeat)
+        if (lastActivePlayer.Acted)
         {
             // They've already acted, move to showdown
             Debug.Log("✅ Last active player already acted. Moving to showdown.");
@@ -564,54 +566,40 @@ public void RPC_PassTurnToNextBySeat(int currentSeat)
     
     Debug.Log($"Active players: {string.Join(", ", activeP.Select(p => $"{p.PlayerName}(seat{p.seatIndex})"))}");
     
-    // ✅ Find current player index INSIDE activeP
-    int currentIndex = -1;
-    for (int i = 0; i < activeP.Count; i++)
-    {
-        if (activeP[i].seatIndex == currentSeat)
-        {
-            currentIndex = i;
-            break;
-        }
-    }
+    // ✅ Find current player's index in activeP list
+    int currentIndex = activeP.FindIndex(p => p.seatIndex == currentSeat);
     
-    // ✅ If current seat not found in active list, find the next seat in order
     if (currentIndex == -1)
     {
-        Debug.LogWarning($"⚠️ Seat {currentSeat} not in active list (likely went all-in). Finding next available seat...");
-        
-        // Find the first active player with a seat index GREATER than currentSeat
-        currentIndex = activeP.FindIndex(p => p.seatIndex > currentSeat);
-        
-        // If no one after currentSeat, wrap around to the first player
-        if (currentIndex == -1)
-        {
-            currentIndex = 0;
-        }
-        else
-        {
-            // We found the next player, so don't increment again
-            currentIndex--;
-        }
+        Debug.LogWarning($"⚠️ Current seat {currentSeat} not found in active players. Starting from first player.");
+        currentIndex = 0;
     }
     
-    // ✅ Get next index
+    // ✅ Get next player in the activeP list (circular)
     int nextIndex = (currentIndex + 1) % activeP.Count;
-    
-    // ✅ Get the next player
     PlayerManager nextPlayer = activeP[nextIndex];
+    
+    // ✅ Check if we've cycled back to the starting player
+    int playersWithChips = activeP.Count(p => p.chipCount > 0);
     
     if (nextPlayer.seatIndex == currentSeat)
     {
-        Debug.Log(
-            $"✅ Turn would return to same seat ({currentSeat}). " +
-            $"Ending betting round."
-        );
-        photonView.RPC("ResetTurnStatesForOthers", RpcTarget.AllBuffered);
-        if (nextPlayer.UI != null)
-            nextPlayer.UI.SetActive(false);
-        StartCoroutine(WaitAndShow());
-        return;
+        if (playersWithChips <= 1)
+        {
+            Debug.Log(
+                $"✅ Turn would return to same seat ({currentSeat}) with only {playersWithChips} player(s) with chips. " +
+                $"Ending betting round."
+            );
+            photonView.RPC("ResetTurnStatesForOthers", RpcTarget.AllBuffered);
+            if (nextPlayer.UI != null)
+                nextPlayer.UI.SetActive(false);
+            StartCoroutine(WaitAndShow());
+            return;
+        }
+        else
+        {
+            Debug.Log($"⚠️ Turn cycled back to seat {currentSeat} but {playersWithChips} players still have chips. Continuing.");
+        }
     }
     
     Debug.Log($"✅ Passing turn → {nextPlayer.PlayerName} (seat {nextPlayer.seatIndex})");
@@ -829,31 +817,4 @@ public PlayerManager FindPlayerByName(string playerName)
     }
 }
 }
-public class HandComparer : IComparer<PlayerManager>
-{
-    public int Compare(PlayerManager x, PlayerManager y)
-    {
-        if (x == null || y == null)
-            return 0;
-        
-        // ✅ First compare HandRank (higher is better)
-        int handRankComparison = x.currentHandRank.CompareTo(y.currentHandRank);
-        if (handRankComparison != 0)
-            return handRankComparison;
-        
-        // ✅ If HandRank is equal, compare each card from highest to lowest
-        for (int i = 0; i < 5; i++)
-        {
-            if (x.currentBestCards.Count <= i || y.currentBestCards.Count <= i)
-                break;
-            
-            int cardComparison = ((int)x.currentBestCards[i].rank).CompareTo((int)y.currentBestCards[i].rank);
-            
-            if (cardComparison != 0)
-                return cardComparison;
-        }
-        
-        // ✅ Hands are completely equal
-        return 0;
-    }
-}
+
