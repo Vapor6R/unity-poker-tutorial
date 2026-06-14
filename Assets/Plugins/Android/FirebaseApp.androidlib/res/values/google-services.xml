@@ -1,0 +1,11 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources xmlns:tools="http://schemas.android.com/tools" tools:keep="@string/gcm_defaultSenderId,@string/google_storage_bucket,@string/project_id,@string/google_api_key,@string/google_crash_reporting_api_key,@string/google_app_id,@string/default_android_client_id,@string/default_web_client_id">
+  <string name="gcm_defaultSenderId" translatable="false">190326388740</string>
+  <string name="google_storage_bucket" translatable="false">poker-a871e.firebasestorage.app</string>
+  <string name="project_id" translatable="false">poker-a871e</string>
+  <string name="google_api_key" translatable="false">AIzaSyDqrgZX-mm2VrStwRcKOtu5ZwchqkfDAMU</string>
+  <string name="google_crash_reporting_api_key" translatable="false">AIzaSyDqrgZX-mm2VrStwRcKOtu5ZwchqkfDAMU</string>
+  <string name="google_app_id" translatable="false">1:190326388740:android:d9646d9103d33bfeb5dd51</string>
+  <string name="default_android_client_id" translatable="false">190326388740-27oglhb9depgh2tpa429avin6o4sfr1h.apps.googleusercontent.com</string>
+  <string name="default_web_client_id" translatable="false">190326388740-t6uhpa00essvpso07on2mr7cl6qnhs6f.apps.googleusercontent.com</string>
+</resources>

@@ -5,10 +5,20 @@ EditorBuildSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Scenes:
+  - enabled: 0
+    path: Assets/Scenes/SampleScene.unity
+    guid: 8c9cfa26abfee488c85f1582747f6a02
   - enabled: 1
-    path: Assets/Photon/PhotonUnityNetworking/Demos/PunBasics-Tutorial/Scenes/0.unity
-    guid: bff77b01b50254edbb6edeeaba5ae8b3
+    path: Assets/Scenes/Login.unity
+    guid: ba7740ae8666ea148bbd023968a23448
+  - enabled: 0
+    path: Assets/Scenes/MainMenu0.unity
+    guid: da5674cad70ffe047906d94b22453746
   - enabled: 1
-    path: Assets/Scenes/1.unity
-    guid: 2cda990e2423bbf4892e6590ba056729
-  m_configObjects: {}
+    path: Assets/Scenes/MainMenu.unity
+    guid: a86a8975a1c62db40a9836df7a00af3d
+  - enabled: 1
+    path: Assets/Scenes/Room.unity
+    guid: 3769c9572f8517f42b65c2f7ef4b00f2
+  m_configObjects:
+    com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 2bcd2660ca9b64942af0de543d8d7100, type: 3}

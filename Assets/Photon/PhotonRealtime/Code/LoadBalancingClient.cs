@@ -4307,6 +4307,7 @@ namespace Photon.Realtime
         void OnErrorInfo(ErrorInfo errorInfo);
     }
 
+
     /// <summary>
     /// Container type for callbacks defined by IConnectionCallbacks. See LoadBalancingCallbackTargets.
     /// </summary>

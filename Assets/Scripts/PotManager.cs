@@ -1,384 +1,200 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using Photon.Pun;
-using System.Collections;
 using TMPro;
-using System;
-using System.Globalization;
-[Serializable]
-public class PlayerContributionEntry
-{
-    public string playerName;
-    public long amount;
-}
-public class PotManager : MonoBehaviourPunCallbacks
-{
-    public class PlayerContribution
-    {
-        public string playerName;
-        public long bet;
-        public bool folded;
-    }
 
-    public class SidePot
+/// <summary>
+/// Tracks every chip that enters the pot this hand.
+/// Calculates main pot + side pots when all-in players are involved.
+/// Lives on MasterClient; results are broadcast via RPC for UI updates.
+/// </summary>
+public class PotManager : MonoBehaviourPun
+{
+    public static PotManager Instance;
+
+    [Header("UI")]
+    public TMP_Text potText;   // optional — shows "Pot: 320"
+
+    // ── Data ──────────────────────────────────────────────────────────────────
+
+    /// <summary>Total chips contributed this hand per seatIndex.</summary>
+    public Dictionary<int, long> contributions = new Dictionary<int, long>();
+
+    // ── Structs ───────────────────────────────────────────────────────────────
+
+    public struct Pot
     {
         public long amount;
-        public List<string> eligiblePlayers = new List<string>();
+        public List<int> eligibleSeats; // seats that can win this pot
+
+        public override string ToString() =>
+            $"Pot {amount} — eligible: [{string.Join(", ", eligibleSeats)}]";
     }
-	public TMP_Text potText;
-	    public long TotalPot;
-public Dictionary<string, long> playerContributions = new Dictionary<string, long>();
-[SerializeField] 
-    private List<PlayerContributionEntry> playerContributionsDebug = new List<PlayerContributionEntry>();
-    
-    public Dictionary<string, long> PlayerContributions
+
+    // ── Unity ─────────────────────────────────────────────────────────────────
+
+    void Awake()
     {
-        get { return playerContributions; }
+        if (Instance != null && Instance != this) { Destroy(gameObject); return; }
+        Instance = this;
     }
-    
-    // Call this in Update() or LateUpdate() to sync dictionary to inspector list
-public static PotManager Instance;
-    public List<SidePot> sidePots = new List<SidePot>();
-private GameManager gameManager;
-private bool isDistributing = false;
-public Deck DeckInstance;
-    
-private void Update()
-{
-	LateUpdate();
-}
-            private void LateUpdate()
+
+    // ── Public API (MasterClient only) ────────────────────────────────────────
+
+    /// <summary>
+    /// Record chips going into the pot.  Call for blinds, calls, raises, all-ins.
+    /// </summary>
+    public void AddContribution(int seatIndex, long amount)
     {
-        // Update inspector list with current dictionary values
-        playerContributionsDebug.Clear();
-        foreach (var kvp in playerContributions)
+        if (!PhotonNetwork.IsMasterClient) return;
+        if (!contributions.ContainsKey(seatIndex))
+            contributions[seatIndex] = 0;
+        contributions[seatIndex] += amount;
+
+        long total = TotalPot();
+        string allContribs = "";
+        foreach (var kv in contributions)
+            allContribs += $"Seat{kv.Key}={kv.Value} ";
+        Debug.Log($"[PotManager] AddContribution → Seat {seatIndex} +{amount} | Contributions: {allContribs.Trim()} | TotalPot={total}");
+
+        BroadcastTotal();
+    }
+
+    /// <summary>
+    /// Returns the raw total (sum of all contributions). Useful for quick display.
+    /// </summary>
+    public long TotalPot()
+    {
+        long total = 0;
+        foreach (var v in contributions.Values) total += v;
+        return total;
+    }
+
+    /// <summary>
+    /// Calculate main pot + side pots.
+    /// Pass the list of active (non-folded) players so eligibility is correct.
+    /// Returns ordered list: index 0 = main pot, rest = side pots.
+    /// </summary>
+    public List<Pot> CalculatePots(List<PlayerManager> allPlayers)
+    {
+        // Build a working copy: only players who contributed > 0
+        // Key = seatIndex, Value = total contributed
+        var contribs = new Dictionary<int, long>(contributions);
+
+        // Seats of non-folded players (eligible to win)
+        var activeSeatSet = new HashSet<int>(
+            allPlayers.Where(p => !p.isFolded).Select(p => p.seatIndex));
+
+        // All seats that put chips in (including folded — their chips stay)
+        var allSeats = contribs.Keys.ToList();
+
+        List<Pot> pots = new List<Pot>();
+
+        // Iterative side-pot algorithm
+        // Each pass: find the smallest all-in stack, create a pot capped at that level
+        while (contribs.Count > 0 && contribs.Values.Any(v => v > 0))
         {
-            playerContributionsDebug.Add(new PlayerContributionEntry 
-            { 
-                playerName = kvp.Key, 
-                amount = kvp.Value 
-            });
+            // Minimum non-zero contribution this pass
+            long cap = contribs.Values.Where(v => v > 0).Min();
+
+            long potAmount = 0;
+            var eligible = new List<int>();
+
+            foreach (var seat in allSeats.ToList())
+            {
+                if (!contribs.ContainsKey(seat)) continue;
+
+                long take = Math.Min(contribs[seat], cap);
+                potAmount += take;
+                contribs[seat] -= take;
+
+                if (contribs[seat] == 0)
+                    contribs.Remove(seat);
+
+                // Eligible = contributed to this level AND not folded
+                if (activeSeatSet.Contains(seat))
+                    eligible.Add(seat);
+            }
+
+            if (potAmount > 0)
+                pots.Add(new Pot { amount = potAmount, eligibleSeats = eligible });
         }
+
+        return pots;
     }
 
-		 void Awake() {gameManager = FindObjectOfType<GameManager>();
-    if (Instance != null && Instance != this) {
-      Debug.LogWarning("Duplicate GameManager found, destroying it: " + gameObject.name);
-      Destroy(gameObject);
-      return;
+    /// <summary>
+    /// Evaluate hands, award each pot to the correct winner(s), and return
+    /// the main-pot result so ShowdownManager can announce it.
+    /// MasterClient only.
+    /// </summary>
+    public HandEvaluator.ShowdownResult AwardPots(List<PlayerManager> allPlayers)
+    {
+        if (!PhotonNetwork.IsMasterClient) return null;
+
+        List<string> community = DeckManager.Instance.communityCards;
+        List<Pot> pots = CalculatePots(allPlayers);
+
+        HandEvaluator.ShowdownResult mainResult = null;
+
+        foreach (var pot in pots)
+        {
+            var eligible = allPlayers
+                .Where(p => pot.eligibleSeats.Contains(p.seatIndex) && !p.isFolded && p.InGame)
+                .ToList();
+
+            if (eligible.Count == 0) continue;
+
+            var result = HandEvaluator.DetermineWinner(eligible, community);
+            if (result == null) continue;
+
+            // Keep the main pot (first/largest) result for the announcement
+            if (mainResult == null) mainResult = result;
+
+            long share = pot.amount / result.winners.Count;
+            long remainder = pot.amount % result.winners.Count;
+
+            // In PotManager.cs — replace the award block inside AwardPots()
+            foreach (var winner in result.winners)
+            {
+                long award = share + (remainder > 0 ? 1 : 0);
+                remainder = Math.Max(0L, remainder - 1);
+
+                // Award on master first so chips value is correct before sync
+                winner.chips += award;
+
+                // Then broadcast the authoritative new chip count to ALL clients
+                winner.photonView.RPC("RPC_AwardChips", RpcTarget.All, winner.chips, award, result.winningHand.RankName);
+
+                Debug.Log($"[Pot] Seat {winner.seatIndex} wins {award} ({result.winningHand.RankName})");
+            }
+        }
+
+        ResetPot();
+        return mainResult;
     }
 
-    Instance = this;
-    DontDestroyOnLoad(gameObject);  // Optional: use only if you load scenes and want to keep GameManager
-    Debug.Log("GameManager initialized: " + gameObject.name);
-  }
-    
+    /// <summary>Clear all contributions. Call at the start of each new hand.</summary>
+    public void ResetPot()
+    {
+        contributions.Clear();
+        BroadcastTotal();
+    }
+
+    // ── Internal ──────────────────────────────────────────────────────────────
+
+    void BroadcastTotal()
+    {
+        photonView.RPC("RPC_UpdatePotUI", RpcTarget.All, TotalPot());
+    }
+
+
 	[PunRPC]
-public void AddToPot(string playerName, long betAmount)
+void RPC_UpdatePotUI(long total)
 {
-
-    Debug.Log($"💰 [AddToPot] Adding {betAmount} from {playerName} to pot");
-
-    if (playerContributions.ContainsKey(playerName))
-        playerContributions[playerName] += betAmount;
-    else
-        playerContributions[playerName] = betAmount;
-
-    TotalPot += betAmount;
-    
-    Debug.Log($"💰 [AddToPot] TotalPot is now: {TotalPot}");
-    
-    photonView.RPC("UpdatePotUI", RpcTarget.AllBuffered, TotalPot);
-    
-    Debug.Log("==== PLAYER CONTRIBUTIONS ====");
-    var contributions = PlayerContributions;
-    foreach (var kv in contributions)
-        Debug.Log($"{kv.Key}: {kv.Value}");
+    if (potText != null)
+        potText.text = $"Pot: {ChipFormatter.Format(total)}";
 }
-
-[PunRPC]
-    public void UpdatePotUI(long x)
-    {
-        if (potText != null)
-            potText.text = $"Pot: {FormatChipsWithSuffix(x)}";
-    }
-  public void CalculateSidePots()
-{
-    sidePots.Clear();
-
-    var contributions = PlayerContributions;
-
-    if (contributions.Count == 0)
-    {
-        Debug.LogWarning("⚠️ No player contributions found.");
-        return;
-    }
-
-    // 1️⃣ Sort by contribution ascending
-    var sorted = contributions
-        .OrderBy(c => c.Value)
-        .ToList();
-
-    // 2️⃣ Collect distinct contribution levels
-    var distinctTiers = sorted
-        .Select(c => c.Value)
-        .Distinct()
-        .OrderBy(v => v)
-        .ToList();
-
-    long previousTier = 0;
-
-    foreach (var tier in distinctTiers)
-    {
-        long potShare = tier - previousTier;
-        if (potShare <= 0) continue;
-
-        // ✅ Only players who contributed >= current tier are eligible
-        var eligible = sorted
-            .Where(c => c.Value >= tier)
-            .Select(c => c.Key)
-            .ToList();
-
-        if (eligible.Count == 0) continue;
-
-        long potAmount = potShare * eligible.Count;
-
-        SidePot pot = new SidePot
-        {
-            amount = potAmount,
-            eligiblePlayers = eligible
-        };
-
-        sidePots.Add(pot);
-
-        previousTier = tier;
-    }
-
-    // 🧩 Debug Output
-    Debug.Log("==== 🪙 SIDE POTS CREATED (FIXED) ====");
-    for (int i = 0; i < sidePots.Count; i++)
-    {
-        var pot = sidePots[i];
-        Debug.Log($"Pot #{i + 1}: {pot.amount} chips | Eligible: {string.Join(", ", pot.eligiblePlayers)}");
-    }
-
-    // ✅ Summary Total
-    long total = sidePots.Sum(p => p.amount);
-    Debug.Log($"💰 Total Pots Combined: {total}");
-}
- public IEnumerator AwardPots(List<string> showdownOrder)
-{
-    isDistributing = true;
-
-    
-    if (sidePots.Count == 0)
-    {
-        Debug.LogWarning("⚠️ No side pots to award!");
-        isDistributing = false;
-        yield break;
-    }
-
-    Debug.Log("==== 🏆 AWARDING SIDE POTS ====");
-
-    foreach (var pot in sidePots)
-    {
-        // ✅ Restrict to eligible players only
-        var eligiblePlayers = showdownOrder
-            .Where(name => pot.eligiblePlayers.Contains(name))
-            .ToList();
-
-        if (eligiblePlayers.Count == 0)
-        {
-            Debug.LogWarning("⚠️ No eligible players for this pot!");
-            continue;
-        }
-
-        // ✅ The first eligible player in showdown order wins this pot
-        string winnerName = eligiblePlayers.First();
-
-        PlayerManager winner = GameManager.Instance.FindPlayerByName(winnerName);
-        if (winner == null)
-        {
-            Debug.LogWarning($"⚠️ Could not find PlayerManager for {winnerName}");
-            continue;
-        }
-
-        // ✅ Award the full pot to that player via Photon RPC
-        winner.photonView.RPC("AddChipsRPC", winner.photonView.Owner, pot.amount);
-
-        // Optional delay for animation / pacing
-        yield return new WaitForSeconds(2);
-
-        Debug.Log($"🏆 {winnerName} wins {pot.amount} chips from pot (Eligible: {string.Join(", ", pot.eligiblePlayers)})");
-		Deck.Instance.photonView.RPC("Dfalse", RpcTarget.AllBuffered);
-    }
-
-    // ✅ Optional: summary total
-    long totalAwarded = sidePots.Sum(p => p.amount);
-    Debug.Log($"💰 Total Chips Awarded: {totalAwarded}");
-
-    isDistributing = false;
-
-    // ✅ All done — trigger restart
-DeckInstance.photonView.RPC("ResetInProgressF", RpcTarget.AllBuffered);
-    GameManager.Instance.photonView.RPC("RoundInProgressF", RpcTarget.AllBuffered);
-	 GameManager.Instance.photonView.RPC("BlindF", RpcTarget.AllBuffered);
-	 SpawnButtonManager spawn = FindObjectOfType<SpawnButtonManager>();
-if (spawn != null && spawn.photonView != null)
-{
-    spawn.photonView.RPC("RPC_RotateSeats", RpcTarget.AllBuffered);
-    Debug.Log("🔄 [PotManager] Seats rotated successfully after awarding chips.");
-}
-else
-{
-    Debug.LogError("❌ SpawnButtonManager not found! Cannot rotate seats.");
-}
-	  DeckInstance.photonView.RPC("DeckFalse", RpcTarget.AllBuffered);
-	  foreach (PlayerManager pm in FindObjectsOfType<PlayerManager>())
-    {
-        if (pm != null && pm.photonView != null)
-        {
-            pm.photonView.RPC("Check", RpcTarget.AllViaServer);
-			pm.IsPlaying=false ;       }
-    }
-    int activeCount = FindObjectsOfType<PlayerManager>()
-        .Count(pm => pm != null && pm.InGame && pm.chipCount > 0);
-
-    if (activeCount <= 1)
-    {
-
-        yield break;
-    }
-		  DeckInstance.photonView.RPC("DeckFalse", RpcTarget.AllBuffered);
-DeckInstance.photonView.RPC("Dfalse", RpcTarget.AllBuffered);
-	 GameManager.Instance.photonView.RPC("Reset", RpcTarget.AllBuffered);
-StartCoroutine(NextStage());
-    yield break;
-}
-public static string FormatChipsWithSuffix(long amount)
-{
-    if (amount >= 1_000_000_000_000)
-        return (amount / 1_000_000_000_000d).ToString("0.#", CultureInfo.InvariantCulture) + "T";
-    if (amount >= 1_000_000_000)
-        return (amount / 1_000_000_000d).ToString("0.#", CultureInfo.InvariantCulture) + "B";
-    if (amount >= 1_000_000)
-        return (amount / 1_000_000d).ToString("0.#", CultureInfo.InvariantCulture) + "M";
-    if (amount >= 1_000)
-        return (amount / 1_000d).ToString("0.#", CultureInfo.InvariantCulture) + "K";
-
-    return amount.ToString("N0", CultureInfo.InvariantCulture);
-}
- public IEnumerator NextStage()
-{
-	yield return new WaitForSeconds(1f);
-	 GameManager.Instance.photonView.RPC("ProgressF", RpcTarget.AllBuffered);
-        GameManager.Instance.photonView.RPC("StartSit", RpcTarget.MasterClient);
- GameManager.Instance.photonView.RPC("ResetTurnStatesForOthers", RpcTarget.AllBuffered);
-    GameManager.Instance.photonView.RPC("blindf", RpcTarget.AllBuffered);
-
-    yield break;
-
-}
-public IEnumerator AwardPotToLastPlayer(List<string> playerNames)
-{
-    isDistributing = true;
-
-    if (TotalPot <= 0)
-    {
-        Debug.LogWarning("⚠️ No pot to award!");
-        isDistributing = false;
-        yield break;
-    }
-
-    if (playerNames == null || playerNames.Count == 0)
-    {
-        Debug.LogError("❌ No player names provided!");
-        isDistributing = false;
-        yield break;
-    }
-
-    // Get the last player name (winner)
-    string winnerName = playerNames.Last();
-
-    Debug.Log($"==== 🏆 AWARDING POT TO LAST REMAINING PLAYER ====");
-    Debug.Log($"Winner: {winnerName} | Pot Amount: {TotalPot}");
-
-    // Find the winner's PlayerManager
-    PlayerManager winner = GameManager.Instance.FindPlayerByName(winnerName);
-    if (winner == null)
-    {
-        Debug.LogError($"❌ Could not find PlayerManager for {winnerName}");
-        isDistributing = false;
-        yield break;
-    }
-
-    // Award the entire pot to the winner
-    long potToAward = TotalPot;
-    winner.photonView.RPC("AddChipsRPC", winner.photonView.Owner, potToAward);
-
-    Debug.Log($"🏆 {winnerName} wins {potToAward} chips (all others folded)");
-
-    // Optional delay for visual effect
-    yield return new WaitForSeconds(2);
-
-    // Reset pot and contributions
-    TotalPot = 0;
-    playerContributions.Clear();
-    sidePots.Clear();
-    
-    photonView.RPC("UpdatePotUI", RpcTarget.AllBuffered, 0);
-
-    isDistributing = false;
-
-    // Trigger game reset and next round
-    DeckInstance.photonView.RPC("Dfalse", RpcTarget.AllBuffered);
-    DeckInstance.photonView.RPC("ResetInProgressF", RpcTarget.AllBuffered);
-    GameManager.Instance.photonView.RPC("RoundInProgressF", RpcTarget.AllBuffered);
-    GameManager.Instance.photonView.RPC("BlindF", RpcTarget.AllBuffered);
-
-    // Rotate seats
-    SpawnButtonManager spawn = FindObjectOfType<SpawnButtonManager>();
-    if (spawn != null && spawn.photonView != null)
-    {
-        spawn.photonView.RPC("RPC_RotateSeats", RpcTarget.AllBuffered);
-        Debug.Log("🔄 [PotManager] Seats rotated successfully after awarding chips.");
-    }
-    else
-    {
-        Debug.LogError("❌ SpawnButtonManager not found! Cannot rotate seats.");
-    }
-
-    DeckInstance.photonView.RPC("DeckFalse", RpcTarget.AllBuffered);
-
-    // Reset player states
-    foreach (PlayerManager pm in FindObjectsOfType<PlayerManager>())
-    {
-        if (pm != null && pm.photonView != null)
-        {
-            pm.photonView.RPC("Check", RpcTarget.AllViaServer);
-            pm.IsPlaying = false;
-        }
-    }
-
-    // Check if enough players remain for next round
-    int activeCount = FindObjectsOfType<PlayerManager>()
-        .Count(pm => pm != null && pm.InGame && pm.chipCount > 0);
-
-    if (activeCount <= 1)
-    {
-        Debug.LogWarning("⚠️ Not enough players to continue!");
-        yield break;
-    }
-
-    DeckInstance.photonView.RPC("DeckFalse", RpcTarget.AllBuffered);
-    DeckInstance.photonView.RPC("Dfalse", RpcTarget.AllBuffered);
-    GameManager.Instance.photonView.RPC("Reset", RpcTarget.AllBuffered);
-
-    // Start next round
-    StartCoroutine(NextStage());
-
-    yield break;
-}
-
 }

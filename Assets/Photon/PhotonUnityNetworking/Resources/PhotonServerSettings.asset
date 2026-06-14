@@ -11,15 +11,15 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 9f3758f8f58fdef43803eb9be1df0608, type: 3}
   m_Name: PhotonServerSettings
-  m_EditorClassIdentifier: 
+  m_EditorClassIdentifier: PhotonUnityNetworking::Photon.Pun.ServerSettings
   AppSettings:
-    AppIdRealtime: 17592d5a-9b9f-4bc0-bbd9-e1f46ca313d2
+    AppIdRealtime: 476b3b91-c985-4611-8afe-f2d7ea5585ac
     AppIdFusion: 
     AppIdChat: 
     AppIdVoice: 
     AppVersion: 
     UseNameServer: 1
-    FixedRegion: 
+    FixedRegion: eu
     Server: 
     Port: 0
     ProxyServer: 
@@ -28,86 +28,67 @@ MonoBehaviour:
     AuthMode: 0
     EnableLobbyStatistics: 0
     NetworkLogging: 1
-  DevRegion: eu
+  DevRegion: 
   PunLogging: 0
   EnableSupportLogger: 0
   RunInBackground: 1
   StartInOfflineMode: 0
   RpcList:
+  - Check
   - ClickRpc
+  - Darken
   - DestroyRpc
   - DestroySpaceship
+  - EndMyTurn
   - Fire
+  - RealDarken
+  - ReceiveCards
+  - RefreshChipsUI
   - RespawnSpaceship
-  - FreeButton
-  - OccupyButton
-  - RPC_SetSeatIndex
-  - ActivateUI
-  - RotateSeats
-  - AddToPot
-  - PostBlind
-  - UpdateChipCount
-  - UpdatePotUI
-  - AddCommunityCardRPC
-  - DealCommunityCardsRPC
-  - DealRiverCardRPC
-  - DealTurnCardRPC
-  - DistributeAndAddCommunityCards
-  - DistributeCardsRPC
-  - InitializeCard
-  - InitializeDeck
-  - RestartRPC
-  - RPC_ClearCommunityAndDeck
-  - ShuffleDeckRPC
-  - Start
-  - AddCardToPlayerHandRPC
-  - StartSit
-  - Test
-  - RPC_SetPlayerWaiting
-  - CheckPlayerCountAndAssignRoles
-  - RPC_PassTurnToNextBySeat
-  - SetGameState
-  - HandleUIForPlayerUTG
-  - RPC_SetTurn
-  - UpdateCallAmountUI
-  - floptrue
-  - PlayerFinishedTurn
-  - rivertrue
-  - turntrue
-  - ResetTurnStatesForOthers
-  - AddCommunityCardToHand
-  - AddChipsRPC
-  - Check
-  - CheckAndResetIfSinglePlayer
-  - ResetInProgressF
-  - RestartGame
-  - Reset
-  - UpdateRaiseAmountText
-  - BroadcastCallAmount
-  - IsPlayingT
-  - FinishedF
-  - DebugAllPlayers
-  - ResetInProgressT
-  - Distributing
-  - Dfalse
-  - Decktrue
-  - PostBlinds
-  - blindf
-  - blindt
-  - BlindF
-  - RoundInProgressF
-  - Progress
-  - ProgressF
-  - RPC_SetFolded
-  - RotateSeatsMaster
-  - RPC_ApplySeatMapping
-  - RPC_RotateSeats
-  - RPC_Setplaying
-  - RevealLocalHand
-  - RPC_SetActed
-  - RPC_SetActedF
-  - AssignSeat
-  - RPC_SetButtonIndex
+  - RPC_AnnounceWinner
+  - RPC_ApplyBlind
+  - RPC_AwardChips
+  - RPC_Call
+  - RPC_Check
+  - RPC_ClearAllCards
+  - RPC_ClientGameStart
+  - RPC_ClientNewHand
+  - RPC_DealCard
+  - RPC_DestroyAllCards
+  - RPC_DestroyMyCards
+  - RPC_DisableUI
+  - RPC_Fold
+  - RPC_ForceRefreshSeats
+  - RPC_GiveTurn
+  - RPC_HideSeat
+  - RPC_HighlightCommunityCards
+  - RPC_HighlightWinningCards
+  - RPC_OnPlayerDestroyed
+  - RPC_OnPlayersDestroyed
+  - RPC_Raise
+  - RPC_RequestClearSeat
+  - RPC_RequestClearSeatByActor
+  - RPC_RequestSeat
+  - RPC_RevealCards
+  - RPC_SeatApproved
+  - RPC_SeatDenied
+  - RPC_SetCommunityCard
+  - RPC_SetInGame
+  - RPC_SetRole
+  - RPC_ShowFreedSeat
+  - RPC_SyncAllIn
+  - RPC_SyncBlind
+  - RPC_SyncCall
+  - RPC_SyncCurrentBet
+  - RPC_SyncRaise
+  - RPC_SyncRoundReset
+  - RPC_UpdateCallButton
+  - RPC_UpdatePotUI
+  - SetSeat
+  - SetTurnUI
+  - ShowBlindUI
+  - Undarken
+  - RPC_ShowFreedSeatBusted
   DisableAutoOpenWizard: 1
   ShowSettings: 0
-  DevRegionSetOnce: 1
+  DevRegionSetOnce: 0
